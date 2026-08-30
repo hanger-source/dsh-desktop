@@ -11,9 +11,9 @@ const Path = require('node:path')
 // 同一 UI 被注入两份（曾出现两个 dsh-app-hub）。
 const enabledKeys = new Set()
 
-function logFile(home, line) {
+function logFile(dshHome, line) {
   try {
-    const p = Path.join(home, '.dsh', 'hang-plugins', '.runtime', 'dsh-app-hub', 'dsh-boot.log')
+    const p = Path.join(dshHome, 'hang-plugins', '.runtime', 'dsh-app-hub', 'dsh-boot.log')
     Fs.mkdirSync(Path.dirname(p), { recursive: true })
     Fs.appendFileSync(p, new Date().toISOString() + ' ' + line + '\n')
   } catch (e) { /* ignore */ }
@@ -22,13 +22,28 @@ function logFile(home, line) {
 module.exports = {
   inject: ['webServer'],
   apply(ctx) {
-    const home = process.env.DSH_HOME || process.env.HOME
+    const dshHome = process.env.DSH_HOME || Path.join(process.env.HOME, '.dsh')
+    const parentPid = Number(process.env.DSH_PARENT_PID)
+
+    if (Number.isSafeInteger(parentPid) && parentPid > 1) {
+      ctx.effect(() => {
+        const timer = setInterval(() => {
+          try {
+            process.kill(parentPid, 0)
+          } catch (error) {
+            logFile(dshHome, '[dsh-boot] parent exited pid=' + parentPid + '; stopping dsh web')
+            process.kill(process.pid, 'SIGTERM')
+          }
+        }, 1000)
+        return () => clearInterval(timer)
+      })
+    }
 
     // 新会话诞生 → 自动启用仓库 UI 插件（agent 直接来自事件 payload）
     ctx.on('agent/created', (payload) => {
       const agent = payload && payload.agent
       if (!agent) return
-      setTimeout(() => enableAll(ctx, agent, null, home), 1500)
+      setTimeout(() => enableAll(ctx, agent, null, dshHome), 1500)
     })
 
     // 手动启用端点（webServer 经 inject 保证已就绪）
@@ -48,7 +63,7 @@ module.exports = {
             res.end(JSON.stringify({ ok: false, pending: true, error: 'no initiator agent' }))
             return
           }
-          const out = await enableAll(ctx, agent, want ? want.split(',') : null, home)
+          const out = await enableAll(ctx, agent, want ? want.split(',') : null, dshHome)
           res.end(JSON.stringify({ ok: true, results: out }))
         } catch (e) {
           res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }))
@@ -102,8 +117,8 @@ async function enableOne(runner, agent, meta, hostSrc, clientSrc) {
   } catch (e) { return { ok: false, text: '启用失败：' + String((e && e.message) || e) } }
 }
 
-async function enableAll(ctx, agent, keys, home) {
-  const repo = Path.join(home, '.dsh', 'hang-plugins')
+async function enableAll(ctx, agent, keys, dshHome) {
+  const repo = process.env.DSH_PLUGIN_REPO || Path.join(dshHome, 'hang-plugins')
   const runner = ctx.get('dynamicCordisRunner')
   if (!runner || !agent) return []
   const out = []
@@ -126,6 +141,6 @@ async function enableAll(ctx, agent, keys, home) {
     out.push({ key: dir, ...r })
     if (r && r.ok === true) enabledKeys.add(dir)
   }
-  logFile(home, '[dsh-boot] enableAll -> ' + JSON.stringify(out))
+  logFile(dshHome, '[dsh-boot] enableAll -> ' + JSON.stringify(out))
   return out
 }
