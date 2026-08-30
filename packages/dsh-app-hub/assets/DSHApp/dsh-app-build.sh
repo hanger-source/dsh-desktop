@@ -185,12 +185,39 @@ final class ServerManager {
         }
     }
 
-    /// 常驻模式：壳退出不结束 dsh web 服务。
-    /// 这样重开壳时服务/会话/动态插件都还在；要彻底停服务请在终端控制。
+    /// 退出 app 时一并关闭 dsh web（监听 3080 的进程）。
+    /// 插件自动启用已由 dsh-boot 兜底（下次打开 app → 新会话自动拉起），
+    /// 所以退出 = 整个应用（含服务）关闭，符合"⌘Q 退出"直觉。
     func stop() {
+        killPort(3080)
         proc = nil
         try? logFH?.close()
         logFH = nil
+    }
+
+    private func killPort(_ port: Int) {
+        let lsof = Process()
+        lsof.executableURL = URL(fileURLWithPath: "/usr/bin/lsof")
+        lsof.arguments = ["-tiTCP:\(port)", "-sTCP:LISTEN"]
+        let pipe = Pipe()
+        lsof.standardOutput = pipe
+        try? lsof.run()
+        lsof.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let nl = Character(UnicodeScalar(10))
+        let cr = Character(UnicodeScalar(13))
+        let pids = String(data: data, encoding: .utf8)?
+            .split(omittingEmptySubsequences: true,
+                   whereSeparator: { $0 == nl || $0 == cr || $0 == " " })
+            ?? []
+        for pid in pids {
+            let kill = Process()
+            kill.executableURL = URL(fileURLWithPath: "/bin/kill")
+            kill.arguments = [String(pid)]
+            try? kill.run()
+            kill.waitUntilExit()
+        }
+        logToFile("dsh-app: quit -> killed dsh web on port " + String(port))
     }
 }
 
