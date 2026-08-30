@@ -18,7 +18,6 @@ return {
       // cordis 按钮：隐藏“Cordis Plugin”文字；数字徽标只露数字部分（裁掉 “ running”）。
       '.Nqubda_layer{width:auto!important;margin:0!important}' +
       '.Nqubda_badgeLabel{display:none!important}' +
-      '.Nqubda_badgeCount{max-width:18px!important;overflow:hidden!important;white-space:nowrap!important;text-overflow:clip!important}' +
       '.pstore-root{display:flex;flex-direction:column;gap:14px;padding:4px 2px 12px;font-size:13px;line-height:20px;color:var(--dsw-alias-label-secondary)}' +
       '.pstore-src{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border-radius:10px;background:var(--dsw-alias-bg-layer-1);border:1px solid var(--dsw-alias-border-l1)}' +
       '.pstore-src-main{display:flex;align-items:center;gap:8px;font-weight:600;color:var(--dsw-alias-label-primary)}' +
