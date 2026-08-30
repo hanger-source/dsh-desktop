@@ -1,13 +1,13 @@
 # quota-monitor
 
-侧边栏底部用量/余额监视器（host+client 配对插件）。
+侧边栏底部用量/余额监视器（host+client 配对插件），App 启动时由 dsh-boot 自动启用。
 
 ## 功能
 
-- 根据当前选中的模型 provider（来自 `agentDefaultModel`）显示对应配额：
+- 根据当前选中的模型 provider（来自 `agentDefaultModel.currentSelection().provider`）匹配数据源；provider 命名差异由 `SOURCES` 别名覆盖（如 `deepseek-official` → DeepSeek 官方）：
   - **OpenCode Go（订阅型）**：`小时 / 本周 / 本月` 三档用量百分比 + 迷你进度条 + 剩余倒计时
   - **DeepSeek 官方（充值型）**：`余额 ¥xx.xx`（原样精度）
-- UI：侧边栏底部「插件 / 用量 / 设置」三行中的用量面板；名称加粗与更新时间同行；每小时自动刷新。
+- UI：侧边栏底部「插件 / 用量 / 设置」三行中的用量面板；名称加粗与更新时间同行；每分钟自动刷新。
 
 ## 数据源
 
@@ -18,7 +18,7 @@
 
 百分比为官方接口整数口径（公开接口无小数精度）；金额原样小数。
 
-## 重放步骤（新机器/新会话）
+## 手动启用（一般不需要——dsh-boot 已自动拉起；以下为手动 define/run 步骤）
 
 1. 读取本目录 `code.host.js` 全文，作为 `cordis_define` 的 `code.host` 函数体。
 2. 读取本目录 `code.client.js` 全文，作为 `cordis_define` 的 `code.client` 函数体。
