@@ -70,9 +70,11 @@ return {
       }
     }
 
+    // key = 模型 provider 名（agentDefaultModel.currentSelection().provider），别名覆盖实际命名差异
     const SOURCES = {
-      opencode: { ref: 'OPENCODE_API_KEY', fetch: fetchOpencodeGo, meta: { provider: 'opencode-go', kind: 'subscription', displayName: 'OpenCode Go' } },
-      deepseek: { ref: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+      'opencode-go': { ref: 'OPENCODE_API_KEY', fetch: fetchOpencodeGo, meta: { provider: 'opencode-go', kind: 'subscription', displayName: 'OpenCode Go' } },
+      'deepseek': { ref: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+      'deepseek-official': { ref: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
     }
 
     const queryEntry = async (ref, fetcher, meta) => {
@@ -87,12 +89,23 @@ return {
     }
 
     harness.handle('quota.snapshot', async () => {
-      // 直接查询所有已配置的数据源（不依赖当前模型 provider 的命名差异）
-      const entries = []
-      for (const src of Object.values(SOURCES)) {
-        entries.push(await queryEntry(src.ref, src.fetch, src.meta))
+      // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
+      let current = null
+      const modelService = ctx.get('agentDefaultModel')
+      if (modelService !== undefined) {
+        try {
+          const sel = modelService.currentSelection()
+          current = sel ? { provider: sel.provider, model: sel.model } : null
+        } catch (e) {
+          console.error('[quota] 读取当前模型失败：', e)
+        }
       }
-      return { capturedAt: new Date().toISOString(), entries }
+      const entries = []
+      const source = current && SOURCES[current.provider]
+      if (source) {
+        entries.push(await queryEntry(source.ref, source.fetch, source.meta))
+      }
+      return { capturedAt: new Date().toISOString(), current, entries }
     })
   },
 }

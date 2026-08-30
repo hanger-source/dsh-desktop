@@ -100,8 +100,7 @@ return {
           React.createElement('span', null, '正在读取用量…'))
       }
 
-      const okEntry = entries.find((x) => x && x.ok === true)
-      const e = okEntry || entries[0]
+      const e = entries[0]
       const updated = snap && snap.capturedAt
         ? '更新于 ' + new Date(snap.capturedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
         : ''
