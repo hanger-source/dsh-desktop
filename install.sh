@@ -37,8 +37,8 @@ if [ -f "$SHELL_ASSETS/dsh-app-build.sh" ]; then
     echo "跳过壳：未找到 swiftc（需要 Xcode Command Line Tools）"
   else
     # 运行日志/图标目录
-    mkdir -p "$DST_HOME/dsh-app-hub"
-    [ -f "$SHELL_ASSETS/icon-512.png" ] && cp "$SHELL_ASSETS/icon-512.png" "$DST_HOME/dsh-app-hub/icon-512.png"
+    mkdir -p "$DST_HOME/hang-plugins/.runtime/dsh-app-hub"
+    [ -f "$SHELL_ASSETS/icon-512.png" ] && cp "$SHELL_ASSETS/icon-512.png" "$DST_HOME/hang-plugins/.runtime/dsh-app-hub/icon-512.png"
     echo "==> 构建并安装 DSH.app（输出 ~/Applications）"
     bash "$SHELL_ASSETS/dsh-app-build.sh" "$HOME/Applications" "$SHELL_ASSETS" \
       && echo "壳已安装：$HOME/Applications/DSH.app（双击打开；也可在 dsh 设置 → App 里管理）" \
