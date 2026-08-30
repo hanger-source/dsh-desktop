@@ -46,6 +46,15 @@ skills/                     # 仓库自带技能（dsh-plugin-install / dsh-plug
 | `hang-plugins` | 设置 → Hang 的插件管理器（同步仓库、列出插件、启用引导） |
 | `quota-monitor` | 侧边栏底部用量/余额监视（OpenCode Go 订阅 + DeepSeek 官方余额，按当前模型 provider 匹配） |
 
+## 通过 CI 发布 DSH.app（GitHub Actions）
+
+`.github/workflows/build-dsh-app.yml` 在 macos runner 上自动构建 DSH.app 并打包 zip：
+
+- **手动触发**：Actions → Build DSH.app → Run workflow，填版本号（如 `0.1.0`）→ 自动打 tag `v0.1.0` 并发布 Release；留空则只上传 artifact（测试用）。
+- **打 tag**：`git tag v0.1.0 && git push origin v0.1.0` → 自动构建并发布到该 tag 的 Release。
+- 下载地址：仓库 Releases 页（如 https://github.com/hanger-source/dsh-plugins/releases ）。
+- **首次打开**：因 ad-hoc 签名，需右键 DSH.app → 打开（Gatekeeper 拦一次）。
+
 ## 手动启用 / 更新插件
 
 ```bash
