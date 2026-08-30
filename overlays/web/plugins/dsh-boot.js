@@ -47,6 +47,18 @@ module.exports = {
       }, 1500)
     })
 
+    // 启动兜底：若进程启动时已恢复活动会话（恢复不触发 agent/created），主动启用一次
+    setTimeout(async () => {
+      try {
+        const agent = pickAgent(agents)
+        if (!agent) return
+        const results = await enableAll(runner, agent, null)
+        ctx.logger?.info?.('[dsh-boot] startup auto-enable: ' + JSON.stringify(results))
+      } catch (e) {
+        ctx.logger?.warn?.('[dsh-boot] startup auto-enable failed: ' + String((e && e.message) || e))
+      }
+    }, 3000)
+
     // webServer 可能晚于本插件 apply：轮询等待就绪后再注册端点，避免端点丢失
     registerEndpoint(ctx, home, agents, runner)
   },
