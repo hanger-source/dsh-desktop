@@ -198,7 +198,7 @@ return {
         h('div', { className: 'dsh-app-muted' }, '手动更新（推荐在终端执行后再重启）：'),
         h('div', { className: 'dsh-app-mono' }, 'npm install -g @deepseek-ai/dsh@latest'),
         h('div', { className: 'dsh-app-muted' }, '不安装、临时跑最新版：'),
-        h('div', { className: 'dsh-app-mono' }, 'npm exec --yes --package=@deepseek-ai/dsh@latest -- dsh web'),
+        h('div', { className: 'dsh-app-mono' }, 'npm exec --yes --package=@deepseek-ai/dsh@latest -- dsh web --no-open'),
       ])
 
       return h('div', null, [appCard, updateCard])
