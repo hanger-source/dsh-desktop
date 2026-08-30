@@ -49,6 +49,15 @@ final class ServerManager {
     }
 
     func start(completion: @escaping (Bool) -> Void) {
+        // 本地没有 dsh 才安装；有则直接用（不做版本比对/自动升级）
+        ensureDshInstalled { _ in
+            DispatchQueue.main.async {
+                self.startServer(completion: completion)
+            }
+        }
+    }
+
+    private func startServer(completion: @escaping (Bool) -> Void) {
         guard let dsh = findDsh() else {
             NSLog("DSH: 找不到 dsh 命令")
             completion(false)
@@ -75,6 +84,53 @@ final class ServerManager {
         }
         proc = p
         pollUp(attempts: 0, completion: completion)
+    }
+
+    /// 本地没有 dsh 才 npm install -g；有则直接返回（不比对版本、不自动升级）。
+    /// 安装失败不阻断启动（findDsh 兜底由调用方处理）。
+    private func ensureDshInstalled(completion: @escaping (Bool) -> Void) {
+        DispatchQueue.global().async {
+            if self.findDsh() != nil {
+                self.logToFile("dsh-app: 本地已有 dsh，直接使用")
+                completion(false)
+                return
+            }
+            let npm = "/opt/homebrew/bin/npm"
+            let out = self.capture(npm, ["install", "-g", "@deepseek-ai/dsh@latest"], timeout: 300)
+            let installed = self.findDsh() != nil
+            self.logToFile("dsh-app: 本地无 dsh，npm install " + (installed ? "成功" : "失败/未完成") + " (outLen=" + String(out.count) + ")")
+            completion(installed)
+        }
+    }
+
+    private func capture(_ exe: String, _ args: [String], timeout: TimeInterval) -> String {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: exe)
+        p.arguments = args
+        let pipe = Pipe()
+        p.standardOutput = pipe
+        p.standardError = Pipe()
+        do { try p.run() } catch { return "" }
+        let sem = DispatchSemaphore(value: 0)
+        p.terminationHandler = { _ in sem.signal() }
+        if sem.wait(timeout: .now() + timeout) == .timedOut { p.terminate() }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+
+
+    private func logToFile(_ line: String) {
+        let p = Env.homeDir() + "/.dsh/hang-plugins/.runtime/dsh-app-hub/shell.log"
+        let nl = String(UnicodeScalar(10))
+        let text = line + nl
+        if let h = FileHandle(forWritingAtPath: p) {
+            h.seekToEndOfFile()
+            h.write(text.data(using: .utf8)!)
+            try? h.close()
+        } else {
+            try? text.data(using: .utf8)?.write(to: URL(fileURLWithPath: p))
+        }
     }
 
     private func findDsh() -> String? {
