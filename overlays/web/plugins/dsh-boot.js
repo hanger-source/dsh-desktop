@@ -14,7 +14,7 @@ module.exports = {
     // 这是"退出 App = 关闭服务"的兜底，不依赖 App 主线程是否响应。
     const parentPid = Number(process.env.DSH_PARENT_PID || 0)
     if (parentPid > 0) {
-      const parentTimer = ctx.setInterval(() => {
+      const parentTimer = setInterval(() => {
         try {
           process.kill(parentPid, 0)
         } catch (e) {
@@ -24,43 +24,16 @@ module.exports = {
           }
         }
       }, 2000)
-      ctx.on('dispose', () => parentTimer())
+      ctx.on('dispose', () => clearInterval(parentTimer))
       ctx.logger?.info?.('[dsh-boot] 父进程监控已开启 pid=' + parentPid)
     }
 
-    const webServer = ctx.get('webServer')
-    if (!webServer) {
-      ctx.logger?.info?.('[dsh-boot] webServer 不可用，跳过端点注册')
-      return
-    }
     const home = process.env.DSH_HOME || process.env.HOME
     const repo = Path.join(home, '.dsh', 'hang-plugins')
     const agents = ctx.get('agents')
     const runner = ctx.get('dynamicCordisRunner')
-    ctx.logger?.info?.('[dsh-boot] 已挂载：/api/dsh-plugins/enable @ ' + repo)
 
-    webServer.register({
-      kind: 'exact',
-      path: '/api/dsh-plugins/enable',
-      handler: async (req, res) => {
-        res.writeHead(200, { 'Content-Type': 'application/json' })
-        try {
-          const url = new URL(req.url, 'http://localhost')
-          const want = url.searchParams.get('key')
-          const agent = pickAgent(agents)
-          if (!agent) {
-            res.end(JSON.stringify({ ok: false, pending: true, error: 'no live session agent yet' }))
-            return
-          }
-          const out = await enableAll(runner, agent, want ? want.split(',') : null)
-          res.end(JSON.stringify({ ok: true, results: out }))
-        } catch (e) {
-          res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }))
-        }
-      },
-    })
-
-    // 新会话诞生 → 自动启用仓库 UI 插件
+    // 新会话诞生 → 自动启用仓库 UI 插件（尽早挂，不依赖 webServer 是否就绪）
     ctx.on('agent/created', (payload) => {
       const agent = payload && payload.agent
       if (!agent) return
@@ -73,7 +46,40 @@ module.exports = {
         }
       }, 1500)
     })
+
+    // webServer 可能晚于本插件 apply：轮询等待就绪后再注册端点，避免端点丢失
+    registerEndpoint(ctx, home, agents, runner)
   },
+}
+
+function registerEndpoint(ctx, home, agents, runner) {
+  const webServer = ctx.get('webServer')
+  if (!webServer) {
+    setTimeout(() => registerEndpoint(ctx, home, agents, runner), 500)
+    return
+  }
+  ctx.logger?.info?.('[dsh-boot] 已挂载：/api/dsh-plugins/enable @ ' + Path.join(home, '.dsh', 'hang-plugins'))
+
+  webServer.register({
+    kind: 'exact',
+    path: '/api/dsh-plugins/enable',
+    handler: async (req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      try {
+        const url = new URL(req.url, 'http://localhost')
+        const want = url.searchParams.get('key')
+        const agent = pickAgent(agents)
+        if (!agent) {
+          res.end(JSON.stringify({ ok: false, pending: true, error: 'no live session agent yet' }))
+          return
+        }
+        const out = await enableAll(runner, agent, want ? want.split(',') : null)
+        res.end(JSON.stringify({ ok: true, results: out }))
+      } catch (e) {
+        res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }))
+      }
+    },
+  })
 }
 
 async function enableOne(runner, agents, meta, hostSrc, clientSrc) {

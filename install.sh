@@ -1,34 +1,15 @@
 #!/usr/bin/env bash
-# 把仓库 packages/ 中「无 UI」的插件（meta.ui=false）装入官方的用户预设目录
-# ~/.dsh/.agent-presets/<id>/（DSH 自动发现，新会话自动挂载，重启自动恢复）。
-# 幂等：重复运行只会刷新文件与配置行。
+# 安装 DSH.app 原生壳 + 技能。插件自动启用由 dsh-boot 承担（App overlay 注入，
+# 会话创建时自动 define+run 仓库 packages/ 下的 UI 插件）。
 set -euo pipefail
 
 DST_HOME="${DSH_HOME:-$HOME/.dsh}"
 REPO="${DST_HOME}/hang-plugins"
-PRESET_ROOT="${DST_HOME}/.agent-presets"
 
-installed=0
-for dir in "$REPO"/packages/*/; do
-  [ -d "$dir" ] || continue
-  meta="$dir/meta.json"
-  [ -f "$meta" ] || continue
-  # 只处理 ui=false 的声明式插件
-  grep -q '"ui"[[:space:]]*:[[:space:]]*false' "$meta" || continue
-  id="$(basename "$dir")"
-  [ -f "$dir/plugin.host.js" ] || continue
-  target="$PRESET_ROOT/$id"
-  mkdir -p "$target/plugins"
-  cp "$dir/plugin.host.js" "$target/plugins/$id.js"
-  # 写 agent.cordis.yml（幂等覆盖，行 = 相对路径本地插件文件）
-  {
-    echo "- id: $id"
-    echo "  name: ./plugins/$id.js"
-  } > "$target/agent.cordis.yml"
-  echo "installed: $id -> $target/agent.cordis.yml"
-  installed=$((installed + 1))
-done
-echo "完成：声明式插件 $installed 个。DSH 每次创建新会话都会重扫该目录并自动挂载（重启不再丢）。"
+# 自动启用已改由 dsh-boot 承担：它经 App 启动 overlay（overlays/web/web-boot.yml 的 insert 注入）
+# 加载进 web profile，在新会话（agent/created）时自动 define+run 启用仓库 packages/ 下的 UI 插件，
+# 并提供 /api/dsh-plugins/enable 端点。不再安装 agent-preset（预设是 id 选择制，不会自动挂载）。
+echo "自动启用：由 dsh-boot（App overlay 注入）在会话创建时自动拉起 UI 插件"
 # ---- 安装原生壳 DSH.app（DSH_BOOT_NO_SHELL=1 时跳过，供 app 自动引导复用） ----
 if [ "${DSH_BOOT_NO_SHELL:-0}" != "1" ]; then
 # 从 packages/dsh-app-hub/assets/DSHApp/ 用 swiftc 构建并装到 ~/Applications/DSH.app
