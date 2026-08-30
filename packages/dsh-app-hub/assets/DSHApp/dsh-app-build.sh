@@ -91,6 +91,19 @@ final class ServerManager {
         pollUp(attempts: 0, completion: completion)
     }
 
+    /// app 打开后后台执行一次 bootstrap（拉仓库/技能/装 host-boot 预设），
+    /// 跳过壳重建（DSH_BOOT_NO_SHELL=1）；网络/失败静默，不影响启动。
+    func runBootstrapInBackground() {
+        DispatchQueue.global().async { [weak self] in
+            guard let self else { return }
+            var env = ProcessInfo.processInfo.environment
+            env["DSH_BOOT_NO_SHELL"] = "1"
+            let cmd = "bash <(curl -fsSL https://raw.githubusercontent.com/hanger-source/dsh-plugins/main/bootstrap.sh)"
+            let out = self.capture("/bin/bash", ["-lc", cmd], timeout: 120, env: env)
+            self.logToFile("dsh-app: bootstrap done (outLen=" + String(out.count) + ")")
+        }
+    }
+
     /// 本地没有 dsh 才 npm install -g；有则直接返回（不比对版本、不自动升级）。
     /// 安装失败不阻断启动（findDsh 兜底由调用方处理）。
     private func ensureDshInstalled(completion: @escaping (Bool) -> Void) {
@@ -108,10 +121,12 @@ final class ServerManager {
         }
     }
 
-    private func capture(_ exe: String, _ args: [String], timeout: TimeInterval) -> String {
+    private func capture(_ exe: String, _ args: [String], timeout: TimeInterval,
+                         env: [String: String]? = nil) -> String {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: exe)
         p.arguments = args
+        if let env { p.environment = env }
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = Pipe()
@@ -190,6 +205,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         buildMenu()
         buildWindow()
         startWatchdog()
+        ServerManager.shared.runBootstrapInBackground()
         logToFile("dsh-app: launched, shell.log 用于排查外观/启动问题")
         // 兜底：页面异常未触发 didFinish 时，8 秒后强制亮出窗口
         DispatchQueue.main.asyncAfter(deadline: .now() + 8) { [weak self] in
