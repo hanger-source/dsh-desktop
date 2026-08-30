@@ -103,12 +103,9 @@ done
         } catch (e) { /* ignore */ }
         if (requestId && pluginRunId) {
           try {
+            // 宿主侧自动授权（含后续版本）；浏览器首次加载仍需用户在卡片点一次允许。
             const r = await runner.runHostHalf(agent, pluginId, packageId, 'run', requestId, true)
             if (r && r.ok === false) return (r.message || '授权启动失败')
-            // 结算并广播：让浏览器审批卡片解除、client half 自动加载。
-            try {
-              await runner.resolveRequestRun(requestId, { ok: true, pluginRunId: String(pluginRunId), packageId, mode: 'run' })
-            } catch (e) { /* 结算失败不致命，插件已启动 */ }
             return null
           } catch (e) {
             return '授权启动失败：' + String((e && e.message) || e)
@@ -290,7 +287,7 @@ echo "CHANGED=$CHANGED"
         }
         const err = await autoApprove(runner, agent, def.pluginId, def.packageId, runRes)
         if (err) return { ok: false, error: err }
-        return { ok: true, text: '已启用（含后续版本授权）：' + def.pluginId }
+        return { ok: true, text: '已自动授权（含后续版本）。首次加载请在出现的卡片上点一次允许，此后更新免审批。' }
       } catch (e) {
         return { ok: false, error: '启用失败：' + String((e && e.message) || e) }
       }
