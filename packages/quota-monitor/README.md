@@ -1,0 +1,31 @@
+# quota-monitor
+
+侧边栏底部用量/余额监视器（host+client 配对插件）。
+
+## 功能
+
+- 根据当前选中的模型 provider（来自 `agentDefaultModel`）显示对应配额：
+  - **OpenCode Go（订阅型）**：`小时 / 本周 / 本月` 三档用量百分比 + 迷你进度条 + 剩余倒计时
+  - **DeepSeek 官方（充值型）**：`余额 ¥xx.xx`（原样精度）
+- UI：侧边栏底部「插件 / 用量 / 设置」三行中的用量面板；名称加粗与更新时间同行；每小时自动刷新。
+
+## 数据源
+
+| 数据源 | 密钥 ref（credentials 服务） | 接口 |
+|---|---|---|
+| OpenCode Go | `OPENCODE_API_KEY` | `GET https://opencode.ai/zen/go/v1/usage` |
+| DeepSeek 官方 | `DEEPSEEK_API_KEY` | `GET https://api.deepseek.com/user/balance` |
+
+百分比为官方接口整数口径（公开接口无小数精度）；金额原样小数。
+
+## 重放步骤（新机器/新会话）
+
+1. 读取本目录 `code.host.js` 全文，作为 `cordis_define` 的 `code.host` 函数体。
+2. 读取本目录 `code.client.js` 全文，作为 `cordis_define` 的 `code.client` 函数体。
+3. `cordis_define`：kind `new`，idPrefix `quota`，name `model-quota-monitor`。
+4. `cordis_run`（mode `run`）激活；若出现批准请求，在界面上允许。
+5. 展开侧边栏（非 56px 窄栏）即可看到用量面板。
+
+## 更新约定
+
+仓库只保存**当前最新版一份源码**（更新代码时直接覆盖本目录两个文件），不保留历史版本；git 自行管理历史。
