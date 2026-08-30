@@ -55,6 +55,11 @@ final class ServerManager {
         logFH = FileHandle(forWritingAtPath: logPath)
 
         let p = Process()
+        // GUI 启动的 .app 环境 PATH 只有系统默认，dsh 的 shebang 是 /usr/bin/env node，
+        // 必须显式带上 Homebrew 的 PATH，否则找不到 node 导致启动失败。
+        var env = ProcessInfo.processInfo.environment
+        env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        p.environment = env
         p.executableURL = URL(fileURLWithPath: dsh)
         p.arguments = ["--profile", "web", "--patch", Env.homeDir() + "/.dsh/hang-plugins/overlays/web/web-boot.yml", "--no-open"]
         p.standardOutput = logFH
