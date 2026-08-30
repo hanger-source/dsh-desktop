@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# 冷启动引导：全新环境（无任何插件）时最快就位。
-# 1) clone 仓库到 ~/.dsh/hang-plugins（已有则 pull）
-# 2) 把 skills/ 同步到 ~/.dsh/skills（Agent 自动获得 dsh-plugin-install 技能）
-# 3) 打印最后一步：开会话，对 Agent 说“启用我的插件”
+# 冷启动引导：全新 dsh 环境一条命令全自动就位。
+# 1) clone 仓库到 $DSH_HOME/hang-plugins（已有则 pull）
+# 2) 把 skills/ 同步到 $DSH_HOME/skills（Agent 获得 dsh-plugin-install 技能）
+# 3) 调用 install.sh：把声明式启动器 host-boot 装入官方预设目录（重启自动加载）
+# 之后：打开一个新会话 → host-boot 自动把 packages/ 下所有插件 define+run 拉起。
 set -euo pipefail
 
 REPO="${DSH_HOME:-$HOME/.dsh}/hang-plugins"
@@ -30,6 +31,16 @@ if [ -d "$REPO/skills" ]; then
 fi
 
 echo
-echo "[3/3] 完成。最后一步只需一句话："
-echo "      打开一个新会话，对该会话的 Agent 说：  启用我的插件"
-echo "      Agent 会按 skills/dsh-plugin-install 依次启用仓库 packages/ 下所有插件。"
+echo "[3/3] 安装声明式启动器 host-boot（写入官方预设目录，随会话自动挂载）..."
+bash "$REPO/install.sh"
+
+echo
+echo "完成，全部就绪："
+echo "  · 仓库：$REPO"
+echo "  · 技能：$SKILL_DST"
+echo "  · 启动器：$(dirname "$SKILL_DST")/.agent-presets/host-boot"
+echo
+echo "现在只需【打开一个新会话】——host-boot 会自动把 packages/ 下所有插件"
+echo "define + run 全部拉起；宿主每次重启/新会话都会自动恢复，无需再操作。"
+echo "（首次启用带 UI 的新插件，浏览器可能要求允许一次；之后全自动。）"
+echo "命令行兜底：curl 'http://127.0.0.1:3080/api/dsh-plugins/enable?key=<插件key>'"
