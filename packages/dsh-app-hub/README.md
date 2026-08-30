@@ -33,3 +33,13 @@
 ## 启用
 
 对 Agent 说「启用 dsh-app-hub」→ 读本目录 `code.host.js` / `code.client.js`（即 `cordis_define` 的 `code.host`/`code.client` 函数体）→ define + run 激活。之后在 dsh 设置 → App 页「生成 DSH.app」生成壳。
+## 壳（DSH.app）资产
+
+`assets/DSHApp/` 包含重建壳的完整输入：
+
+- `DSHApp.swift`：壳源码（可读版）
+- `dsh-app-build.sh`：自包含构建脚本（内嵌同名 Swift 源码 heredoc + Info.plist + 图标 icns + ad-hoc 签名）。**改 Swift 后两处都要同步**（源码文件与 heredoc 段）。
+- `icon-512.png`：壳图标（deepseek-ai 官方标，macOS 自动圆角）
+- `svg2png.swift` / `icon-make.swift`：图标生成辅助脚本（可选）
+
+重建：`bash packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh ~/Applications ~/.dsh/dsh-app-hub`
