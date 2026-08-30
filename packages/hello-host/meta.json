@@ -1,1 +1,0 @@
-{ "name": "hello-host 示例", "purpose": "证明无 UI host 插件可经 agent.cordis.yml 自动加载", "ui": false }
