@@ -130,6 +130,41 @@ done
       return res
     })
 
+    // 当前管理器自身的插件记录（用于自检变更）。
+    function selfPlugin(plugins) {
+      const me = 'hang-plugins 管理器'
+      for (const p of plugins) if (p.name === me) return p
+      return null
+    }
+
+    // 管理器自身源码是否与仓库最新一致。
+    async function selfChanged(agent, selfPkgId) {
+      const runner = ctx.get('dynamicCordisRunner')
+      if (!runner || !selfPkgId) return false
+      let current = null
+      try {
+        current = runner.inspectPackage(agent, selfPkgId, runner.inspectPlugin(agent, selfPkgId).currentPackageId)
+      } catch (e) { return false }
+      const read = await readPkgSource(REPO, 'hang-plugins')
+      if (!read) return false
+      const curHost = (current.code && current.code.host) || ''
+      const curClient = (current.code && current.code.client) || ''
+      return curHost !== read.host || curClient !== read.client
+    }
+
+    // 读一个包的最新源码（返回 {host, client}）。REPO 已在 apply 中解析。
+    async function readPkgSource(repo, key) {
+      const lines = await readLines(READ_SCRIPT(repo, key))
+      let host64 = ''
+      let client64 = ''
+      for (const line of lines) {
+        if (line.startsWith('HOST64=')) host64 = line.slice('HOST64='.length)
+        else if (line.startsWith('CLIENT64=')) client64 = line.slice('CLIENT64='.length)
+      }
+      if (!host64 && !client64) return null
+      return { host: host64 ? atob(host64) : '', client: client64 ? atob(client64) : '' }
+    }
+
     harness.handle('pstore.pull', async () => {
       const script = `
 set -e
@@ -160,12 +195,43 @@ echo "COMMIT=$COMMIT"
 echo "CHANGED=$CHANGED"
 `
       const lines = await readLines(script)
-      const res = { ok: true, commit: null, changed: 0 }
+      const res = { ok: true, commit: null, changed: 0, selfChanged: false }
       for (const line of lines) {
         if (line.startsWith('COMMIT=')) res.commit = line.slice('COMMIT='.length)
         else if (line.startsWith('CHANGED=')) res.changed = Number(line.slice('CHANGED='.length))
       }
+      const agent = currentAgent()
+      const self = agent ? selfPlugin(allPlugins()) : null
+      res.selfChanged = self && self.pluginId ? await selfChanged(agent, self.pluginId) : false
       return res
+    })
+
+    // 用仓库最新源码重载管理器自身（先建新实例，成功后再移除旧实例）。
+    harness.handle('pstore.reloadSelf', async () => {
+      const runner = ctx.get('dynamicCordisRunner')
+      const agent = currentAgent()
+      if (!runner || !agent) return { ok: false, error: '运行环境不可用' }
+      const self = selfPlugin(allPlugins())
+      if (!self) return { ok: false, error: '未找到管理器自身实例' }
+      const meta = { name: 'hang-plugins 管理器', purpose: 'Hang 的插件管理器：同步仓库、启停与状态管理、shell 入口', idPrefix: 'hang', matchPrefix: ['pstore', 'hang'], self: true }
+      const src = await readPkgSource(REPO, 'hang-plugins')
+      if (!src) return { ok: false, error: '读取最新源码失败' }
+      let def
+      try {
+        def = runner.define({
+          name: meta.name,
+          purpose: meta.purpose,
+          plugin: { kind: 'new', idPrefix: meta.idPrefix },
+          code: { host: src.host || void 0, client: src.client || void 0 },
+          sessionId: agent.id,
+        })
+      } catch (e) { return { ok: false, error: '定义失败：' + String((e && e.message) || e) } }
+      try {
+        const runRes = await runner.run(agent, def.pluginId, def.packageId, 'run')
+        if (runRes && runRes.ok === false) return { ok: false, error: runRes.message || runRes.reason || '新实例启动失败' }
+      } catch (e) { return { ok: false, error: '新实例启动失败：' + String((e && e.message) || e) } }
+      try { await runner.undefine(agent, self.pluginId) } catch (e) { /* 旧实例移除失败不影响新实例 */ }
+      return { ok: true, text: '已重载为最新版：' + def.pluginId }
     })
 
     // 启停切换：未启用→新建激活；已停用→重启；运行中→停用。

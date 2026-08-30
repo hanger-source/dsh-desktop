@@ -46,6 +46,8 @@ return {
       const [view, setView] = React.useState(null)
       const [busy, setBusy] = React.useState(false)
       const [msg, setMsg] = React.useState(null)
+      const [selfChanged, setSelfChanged] = React.useState(false)
+      const [reloading, setReloading] = React.useState(false)
       const [error, setError] = React.useState(null)
 
       const load = React.useCallback(async () => {
@@ -68,6 +70,7 @@ return {
         try {
           const res = await host.call('pstore.pull')
           setBusy(false)
+          setSelfChanged(Boolean(res && res.selfChanged))
           setMsg({ kind: 'ok', text: '已同步到 ' + res.commit + (res.changed > 0 ? '（更新了 ' + res.changed + ' 个提交）' : '（已是最新）') })
           await load()
         } catch (e) {
@@ -90,6 +93,24 @@ return {
           await load()
         } catch (e) {
           setBusy(false)
+          setError(String((e && e.message) || e))
+        }
+      }
+
+      const reloadSelf = async () => {
+        setReloading(true)
+        setMsg(null)
+        try {
+          const res = await host.call('pstore.reloadSelf')
+          setReloading(false)
+          if (res && res.ok) {
+            setSelfChanged(false)
+            setMsg({ kind: 'ok', text: res.text || '已重载' })
+          } else {
+            setMsg({ kind: 'err', text: (res && (res.error || res.message)) || '重载失败' })
+          }
+        } catch (e) {
+          setReloading(false)
           setError(String((e && e.message) || e))
         }
       }
@@ -140,7 +161,11 @@ return {
           React.createElement('div', { style: { display: 'flex', gap: 8, marginTop: 6 } },
             React.createElement('button', { className: 'pstore-btn', disabled: busy, onClick: () => { pull() } },
               busy ? '处理中…' : '同步仓库')),
-          msgEl),
+          msgEl,
+          selfChanged ? React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 } },
+            React.createElement('span', { className: 'pstore-warn' }, '管理器自身有新版本（已同步到仓库）'),
+            React.createElement('button', { className: 'pstore-btn', disabled: reloading, onClick: () => { reloadSelf() } },
+              reloading ? '重载中…' : '立即重载')) : null),
         rows.length > 0
           ? React.createElement(React.Fragment, null, rows)
           : React.createElement('span', { className: 'pstore-hint' }, '仓库里还没有插件'))
