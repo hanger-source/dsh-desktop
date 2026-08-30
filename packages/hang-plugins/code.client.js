@@ -11,7 +11,10 @@ return {
       '.hHd-Xa_footArea{flex-direction:row!important;align-items:flex-end!important;justify-content:space-between!important;gap:8px!important}' +
       '.hHd-Xa_footerActions{width:auto!important;flex:1 1 auto!important;min-width:0!important;display:flex!important;align-items:flex-start!important;gap:6px!important;flex-wrap:wrap!important}' +
       '.hHd-Xa_settingsArea{width:auto!important;flex:none!important;margin:0!important;padding:0!important}' +
-      '.hHd-Xa_settingsArea > *{margin-bottom:0!important}' +
+      '.hHd-Xa_settingsArea > *{margin:0!important}' +
+      // 设置触发按钮自带 margin:4px → 清零垂直间距。
+      '.VOzbGW_trigger{margin:0!important}' +
+      '.VOzbGW_rail{margin:0!important}' +
       '.hHd-Xa_collapsed .hHd-Xa_footArea{justify-content:center!important;align-items:center!important}' +
       // 用量面板弹性显示，不再占满整行把设置挤开。
       '.mq-root{flex:0 0 100%!important;max-width:none!important;order:-1!important;padding:4px 6px!important}' +
