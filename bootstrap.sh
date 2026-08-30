@@ -2,8 +2,6 @@
 # 冷启动引导：全新 dsh 环境一条命令全自动就位。
 # 1) clone 仓库到 $DSH_HOME/hang-plugins（已有则 pull）
 # 2) 把 skills/ 同步到 $DSH_HOME/skills（Agent 获得 dsh-plugin-install 技能）
-# 3) 调用 install.sh：把声明式启动器 host-boot 装入官方预设目录（重启自动加载）
-# 之后：打开一个新会话 → host-boot 自动把 packages/ 下所有插件 define+run 拉起。
 set -euo pipefail
 
 REPO="${DSH_HOME:-$HOME/.dsh}/hang-plugins"

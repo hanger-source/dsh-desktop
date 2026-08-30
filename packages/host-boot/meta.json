@@ -1,1 +1,0 @@
-{ "name": "host-boot 自动启动器", "purpose": "宿主启动时自动 define+run 启用仓库里所有带 UI 的动态插件，重启免手动", "ui": false }

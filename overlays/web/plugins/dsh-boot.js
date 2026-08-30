@@ -6,6 +6,11 @@
 const Fs = require('node:fs')
 const Path = require('node:path')
 
+// 进程级幂等：每个包 key 只 define+run 一次。dsh web 启动可能发布多个 agent
+// （恢复会话/前端激活各触发一次 agent/created），没有这个去重会重复定义插件，
+// 同一 UI 被注入两份（曾出现两个 dsh-app-hub）。
+const enabledKeys = new Set()
+
 function logFile(home, line) {
   try {
     const p = Path.join(home, '.dsh', 'hang-plugins', '.runtime', 'dsh-app-hub', 'dsh-boot.log')
@@ -105,16 +110,21 @@ async function enableAll(ctx, agent, keys, home) {
   if (!Fs.existsSync(Path.join(repo, 'packages'))) return out
   for (const dir of Fs.readdirSync(Path.join(repo, 'packages'))) {
     if (keys && !keys.includes(dir)) continue
+    if (enabledKeys.has(dir)) {
+      out.push({ key: dir, ok: true, text: '已启用' })
+      continue
+    }
     const pkg = Path.join(repo, 'packages', dir)
     if (!Fs.existsSync(Path.join(pkg, 'meta.json'))) continue
     let meta
     try { meta = JSON.parse(Fs.readFileSync(Path.join(pkg, 'meta.json'), 'utf8')) } catch (e) { continue }
     if (meta.ui === false) continue
-    if (meta.self === true) continue
     const hostSrc = Fs.existsSync(Path.join(pkg, 'code.host.js')) ? Fs.readFileSync(Path.join(pkg, 'code.host.js'), 'utf8') : ''
     const clientSrc = Fs.existsSync(Path.join(pkg, 'code.client.js')) ? Fs.readFileSync(Path.join(pkg, 'code.client.js'), 'utf8') : ''
     if (!hostSrc && !clientSrc) continue
-    out.push({ key: dir, ...(await enableOne(runner, agent, meta, hostSrc, clientSrc)) })
+    const r = await enableOne(runner, agent, meta, hostSrc, clientSrc)
+    out.push({ key: dir, ...r })
+    if (r && r.ok === true) enabledKeys.add(dir)
   }
   logFile(home, '[dsh-boot] enableAll -> ' + JSON.stringify(out))
   return out
