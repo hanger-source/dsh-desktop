@@ -1,0 +1,4 @@
+# web profile 补丁注入（launcher --patch overlay）：
+# 注入宿主插件 dsh-boot —— 提供 /api/dsh-plugins/enable 端点，app/手动一键启用仓库 UI 插件。
+- id: dsh-boot
+  name: ./plugins/dsh-boot.js

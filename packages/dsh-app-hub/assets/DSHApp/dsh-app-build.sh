@@ -62,7 +62,7 @@ final class ServerManager {
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: dsh)
-        p.arguments = ["web", "--no-open"]
+        p.arguments = ["--profile", "web", "--patch", Env.homeDir() + "/.dsh/hang-plugins/overlays/web/web-boot.yml", "--no-open"]
         p.standardOutput = logFH
         p.standardError = logFH
         p.terminationHandler = { _ in }

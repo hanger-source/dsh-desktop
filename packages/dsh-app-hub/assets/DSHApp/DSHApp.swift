@@ -39,7 +39,7 @@ final class ServerManager {
             completion(false)
             return
         }
-        let logDir = Env.homeDir() + "/.dsh/dsh-app-hub"
+        let logDir = Env.homeDir() + "/.dsh/hang-plugins/.runtime/dsh-app-hub"
         try? FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
         let logPath = logDir + "/server.log"
         FileManager.default.createFile(atPath: logPath, contents: nil)
@@ -47,7 +47,7 @@ final class ServerManager {
 
         let p = Process()
         p.executableURL = URL(fileURLWithPath: dsh)
-        p.arguments = ["web", "--no-open"]
+        p.arguments = ["--profile", "web", "--patch", Env.homeDir() + "/.dsh/hang-plugins/overlays/web/web-boot.yml", "--no-open"]
         p.standardOutput = logFH
         p.standardError = logFH
         p.terminationHandler = { _ in }
@@ -138,6 +138,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu(title: "DSH")
+        appMenu.addItem(withTitle: "重启 DSH 服务",
+                        action: #selector(AppDelegate.restartDSHService(_:)),
+                        keyEquivalent: "r").target = self
+        appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "退出 DSH",
                         action: #selector(NSApplication.terminate(_:)),
                         keyEquivalent: "q")
@@ -235,6 +239,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     private var windowShown = false
 
+    /// 菜单「重启 DSH 服务」：杀监听 3080 的旧服务，看门狗会自动拉起新服务并重载页面
+    @objc func restartDSHService(_ sender: Any?) {
+        logToFile("dsh-app: menu restart requested")
+        let lsof = Process()
+        lsof.executableURL = URL(fileURLWithPath: "/usr/bin/lsof")
+        lsof.arguments = ["-tiTCP:3080", "-sTCP:LISTEN"]
+        let pipe = Pipe()
+        lsof.standardOutput = pipe
+        try? lsof.run()
+        lsof.waitUntilExit()
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let nl = Character(UnicodeScalar(10))
+        let cr = Character(UnicodeScalar(13))
+        let pids = String(data: data, encoding: .utf8)?
+            .split(omittingEmptySubsequences: true,
+                   whereSeparator: { $0 == nl || $0 == cr || $0 == " " })
+            ?? []
+        for pid in pids {
+            let kill = Process()
+            kill.executableURL = URL(fileURLWithPath: "/bin/kill")
+            kill.arguments = [String(pid)]
+            try? kill.run()
+            kill.waitUntilExit()
+        }
+        // watchdog 每 3s 检测端口 → 自动拉起新 dsh web 并 reload 页面
+    }
+
     private func showWindowWhenReady() {
         guard !windowShown else { return }
         windowShown = true
@@ -275,7 +306,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     private func logToFile(_ s: String) {
-        let p = Env.homeDir() + "/.dsh/dsh-app-hub/shell.log"
+        let p = Env.homeDir() + "/.dsh/hang-plugins/.runtime/dsh-app-hub/shell.log"
         let nl = String(UnicodeScalar(10))
         if let h = FileHandle(forWritingAtPath: p) {
             h.seekToEndOfFile()
