@@ -3,8 +3,8 @@ return {
   apply(ctx) {
     const HOME = '/Users/fuhangbo'
     const APP_DIR = HOME + '/Applications/DSH.app'
-    const ICON_SRC = HOME + '/.dsh/dsh-app-hub'
-    const LOG_DIR = HOME + '/.dsh/dsh-app-hub'
+    const ICON_SRC = HOME + '/.dsh/hang-plugins/.runtime/dsh-app-hub'
+    const LOG_DIR = HOME + '/.dsh/hang-plugins/.runtime/dsh-app-hub'
     const PORT = 3080
     const URL = 'http://127.0.0.1:' + PORT + '/'
 
@@ -151,7 +151,7 @@ return {
 
     // ---------- launcher app content ----------
     // 原生壳构建脚本（含 Swift 源码）放在磁盘 ~/.dsh/dsh-app-hub/dsh-app-build.sh，可单独更新
-    const BUILD_SCRIPT_PATH = HOME + '/.dsh/dsh-app-hub/dsh-app-build.sh'
+    const BUILD_SCRIPT_PATH = HOME + '/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh'
 
     // ---------- launcher actions ----------
     async function launcherStatus() {
