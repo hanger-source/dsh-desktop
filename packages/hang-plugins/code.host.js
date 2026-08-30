@@ -257,6 +257,24 @@ echo "CHANGED=$CHANGED"
         if (runRes && runRes.ok === false) {
           return { ok: false, error: runRes.message || runRes.reason || '启动失败' }
         }
+        // 自动授权（含后续版本）：模拟面板“允许未来版本”的双勾确认。
+        if (runRes && runRes.status === 'awaiting-approval') {
+          let requestId = null
+          try {
+            const ps = runner.listPlugins(agent)
+            const p = ps.find((x) => x.pluginId === def.pluginId)
+            requestId = p && p.latestRun && p.latestRun.approvalRequestId
+          } catch (e) { /* ignore */ }
+          if (requestId) {
+            try {
+              const r = await runner.runHostHalf(agent, def.pluginId, def.packageId, 'run', requestId, true)
+              if (r && r.ok === false) return { ok: false, error: r.message || '授权启动失败' }
+              return { ok: true, text: '已启用（含后续版本授权）：' + def.pluginId }
+            } catch (e) {
+              return { ok: false, error: '授权启动失败：' + String((e && e.message) || e) }
+            }
+          }
+        }
         return { ok: true, text: '已启用：' + def.pluginId }
       } catch (e) {
         return { ok: false, error: '启用失败：' + String((e && e.message) || e) }
