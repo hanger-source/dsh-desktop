@@ -187,8 +187,10 @@ return {
     }
 
     async function restartService() {
-      // 杀掉监听 3080 的进程（包括当前实例）；壳的看门狗会自动拉起新 server 并重载页面。
-      // 调用方在更新完成后执行；执行后当前会话连接会中断并自动恢复。
+      // 递延自拉起：先安排 3 秒后自动启动新 dsh web，再杀掉旧进程——
+      // 重启不依赖壳看门狗，壳开不开都能恢复（更新 CLI 后立即生效）。
+      const boot = 'sleep 3; /usr/bin/nohup /opt/homebrew/bin/dsh web --no-open >>' + LOG_DIR + '/server.log 2>&1 &'
+      await runCmd('/bin/bash -c ' + JSON.stringify(boot), 8000, 1024)
       const res = await runCmd('/usr/sbin/lsof -tiTCP:3080 -sTCP:LISTEN | /usr/bin/xargs /bin/kill 2>/dev/null; true', 15000, 2048)
       return { ok: res.exitCode === 0, detail: res.stderr || res.stdout, status: await launcherStatus() }
     }
