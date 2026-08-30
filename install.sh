@@ -29,7 +29,8 @@ for dir in "$REPO"/packages/*/; do
   installed=$((installed + 1))
 done
 echo "完成：声明式插件 $installed 个。DSH 每次创建新会话都会重扫该目录并自动挂载（重启不再丢）。"
-# ---- 安装原生壳 DSH.app ----
+# ---- 安装原生壳 DSH.app（DSH_BOOT_NO_SHELL=1 时跳过，供 app 自动引导复用） ----
+if [ "${DSH_BOOT_NO_SHELL:-0}" != "1" ]; then
 # 从 packages/dsh-app-hub/assets/DSHApp/ 用 swiftc 构建并装到 ~/Applications/DSH.app
 SHELL_ASSETS="$REPO/packages/dsh-app-hub/assets/DSHApp"
 if [ -f "$SHELL_ASSETS/dsh-app-build.sh" ]; then
@@ -48,6 +49,8 @@ else
   echo "跳过壳：未找到 $SHELL_ASSETS/dsh-app-build.sh"
 fi
 echo "install.sh 完成。"
+
+fi
 
 # ---- 安装技能（仓库 skills/ → 用户技能目录 ~/.dsh/skills/） ----
 # DSH 技能发现根 = 工作区 .dsh/skills（本机即 $DSH_HOME/skills），拷贝即被会话收录。

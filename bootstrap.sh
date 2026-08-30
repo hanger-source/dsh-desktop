@@ -32,7 +32,7 @@ fi
 
 echo
 echo "[3/3] 安装声明式启动器 host-boot（写入官方预设目录，随会话自动挂载）..."
-bash "$REPO/install.sh"
+DSH_BOOT_NO_SHELL="${DSH_BOOT_NO_SHELL:-0}" bash "$REPO/install.sh"
 
 echo
 echo "完成，全部就绪："
