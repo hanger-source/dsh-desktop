@@ -112,6 +112,7 @@ done
           try { meta = JSON.parse(parts.slice(2).join('|')) } catch (e) { /* 空 meta */ }
           // 管理器自身不展示（存在即启用，避免与仓库实例冲突）。
           if (meta.self === true) continue
+          if (meta.ui === false) continue // 声明式插件：由 install.sh 装入官方预设自动加载，管理页不列
           const matchA = Array.isArray(meta.matchPrefix) ? meta.matchPrefix : []
           let found = null
           for (const base of matchA) {
@@ -195,6 +196,7 @@ echo "CHANGED=$CHANGED"
       try { meta = JSON.parse(metaRaw) } catch (e) { return { ok: false, error: 'meta.json 解析失败' } }
       // 管理器自身不参与启停。
       if (meta.self === true) return { ok: false, error: '管理器本身始终启用，无需操作' }
+      if (meta.ui === false) return { ok: false, error: '声明式插件由 install.sh 自动加载，无需在此启用/停用' }
       if (!host64 && !client64) return { ok: false, error: '读取插件源码失败' }
       hostSrc = host64 ? atob(host64) : ''
       clientSrc = client64 ? atob(client64) : ''
