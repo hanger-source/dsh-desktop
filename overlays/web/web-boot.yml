@@ -1,4 +1,6 @@
-# web profile 补丁注入（launcher --patch overlay）：
-# 注入宿主插件 dsh-boot —— 提供 /api/dsh-plugins/enable 端点，app/手动一键启用仓库 UI 插件。
-- id: dsh-boot
-  name: ./plugins/dsh-boot.js
+# DSH.app 启动 web profile 时注入的 overlay（仅 App 使用；手动 dsh web 不加载此 patch）。
+# 关闭自动打开浏览器：--no-open 在 --profile 模式下会被 dsh CLI 忽略（allowUnknownOption 吞掉），
+# 必须从配置层 web-runtime.config.openBrowser=false 关掉，否则每次启动都弹浏览器。
+- id: web-runtime
+  config:
+    openBrowser: false
