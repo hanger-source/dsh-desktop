@@ -105,7 +105,7 @@ return {
             : [
                 h('div', { className: 'dsh-app-row' }, [
                   h('span', null, '启动器 ' + (a.appReady ? '已生成' : '未生成')),
-                  h('span', null, '服务端口 ' + a.port + ' ' + (a.portUp ? h('span', { className: 'dsh-app-ok' }, '运行中') : h('span', { className: 'dsh-app-new' }, '未运行'))),
+                  h('span', null, ['服务端口 ' + a.port + ' ', a.portUp ? h('span', { className: 'dsh-app-ok' }, '运行中') : h('span', { className: 'dsh-app-new' }, '未运行')]),
                 ]),
                 h('div', { className: 'dsh-app-row' }, [
                   h('button',
