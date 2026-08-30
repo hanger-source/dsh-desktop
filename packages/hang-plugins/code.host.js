@@ -89,35 +89,6 @@ done
       return out.split('\n').filter((l) => l.length > 0)
     }
 
-
-    // 自动授权（含后续版本）：模拟面板“允许未来版本”的双勾确认。返回错误文本或 null。
-    async function autoApprove(runner, agent, pluginId, packageId, runRes) {
-      if (runRes && runRes.status === 'awaiting-approval') {
-        let requestId = null
-        let pluginRunId = null
-        try {
-          const ps = runner.listPlugins(agent)
-          const p = ps.find((x) => x.pluginId === pluginId)
-          requestId = p && p.latestRun && p.latestRun.approvalRequestId
-          pluginRunId = p && p.latestRun && p.latestRun.pluginRunId
-        } catch (e) { /* ignore */ }
-        if (requestId && pluginRunId) {
-          try {
-            const r = await runner.runHostHalf(agent, pluginId, packageId, 'run', requestId, true)
-            if (r && r.ok === false) return (r.message || '授权启动失败')
-            // 结算并广播：宿主侧授权后主动让浏览器审批卡片消失、client 自动加载。
-            try {
-              await runner.resolveRequestRun(requestId, { ok: true, pluginRunId: String(pluginRunId), packageId, mode: 'run' })
-            } catch (e) { /* 结算失败不致命：插件已授权并启动 */ }
-            return null
-          } catch (e) {
-            return '授权启动失败：' + String((e && e.message) || e)
-          }
-        }
-      }
-      return null
-    }
-
     harness.handle('pstore.list', async () => {
       const lines = await readLines(LIST_SCRIPT(REPO))
       const res = { repoPath: REPO, remote: REMOTE, repoExists: false, commit: null, packages: [] }
@@ -259,9 +230,10 @@ echo "CHANGED=$CHANGED"
         try {
           const runRes = await runner.run(agent, plugin.pluginId, target, 'run')
           if (runRes && runRes.ok === false) return { ok: false, error: runRes.message || runRes.reason || '启动失败' }
-          const err = await autoApprove(runner, agent, plugin.pluginId, target, runRes)
-          if (err) return { ok: false, error: err }
-          return { ok: true, text: '已启用（含后续版本授权）：' + plugin.pluginId }
+          if (runRes && runRes.status === 'awaiting-approval') {
+            return { ok: true, text: '已在出现的位置等待确认：请点【允许】并勾选“允许此插件的后续版本”——一次确认后更新免审批。' }
+          }
+          return { ok: true, text: '已启用：' + plugin.pluginId }
         } catch (e) {
           return { ok: false, error: '启用失败：' + String((e && e.message) || e) }
         }
@@ -288,9 +260,10 @@ echo "CHANGED=$CHANGED"
         if (runRes && runRes.ok === false) {
           return { ok: false, error: runRes.message || runRes.reason || '启动失败' }
         }
-        const err = await autoApprove(runner, agent, def.pluginId, def.packageId, runRes)
-        if (err) return { ok: false, error: err }
-        return { ok: true, text: '已自动授权（含后续版本）。首次加载请在出现的卡片上点一次允许，此后更新免审批。' }
+        if (runRes && runRes.status === 'awaiting-approval') {
+          return { ok: true, text: '已在出现的位置等待确认：请点【允许】并勾选“允许此插件的后续版本”——一次确认后更新免审批。' }
+        }
+        return { ok: true, text: '已启用：' + def.pluginId }
       } catch (e) {
         return { ok: false, error: '启用失败：' + String((e && e.message) || e) }
       }
