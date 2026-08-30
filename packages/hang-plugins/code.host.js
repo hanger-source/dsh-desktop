@@ -94,15 +94,21 @@ done
     async function autoApprove(runner, agent, pluginId, packageId, runRes) {
       if (runRes && runRes.status === 'awaiting-approval') {
         let requestId = null
+        let pluginRunId = null
         try {
           const ps = runner.listPlugins(agent)
           const p = ps.find((x) => x.pluginId === pluginId)
           requestId = p && p.latestRun && p.latestRun.approvalRequestId
+          pluginRunId = p && p.latestRun && p.latestRun.pluginRunId
         } catch (e) { /* ignore */ }
-        if (requestId) {
+        if (requestId && pluginRunId) {
           try {
             const r = await runner.runHostHalf(agent, pluginId, packageId, 'run', requestId, true)
             if (r && r.ok === false) return (r.message || '授权启动失败')
+            // 结算并广播：让浏览器审批卡片解除、client half 自动加载。
+            try {
+              await runner.resolveRequestRun(requestId, { ok: true, pluginRunId: String(pluginRunId), packageId, mode: 'run' })
+            } catch (e) { /* 结算失败不致命，插件已启动 */ }
             return null
           } catch (e) {
             return '授权启动失败：' + String((e && e.message) || e)
