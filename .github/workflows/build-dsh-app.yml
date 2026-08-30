@@ -1,0 +1,47 @@
+# 构建 DSH.app 原生壳并发布下载
+# 触发方式：
+#   - 手动（workflow_dispatch）：构建并上传 DSH.app.zip artifact（Actions 页面下载，用于测试）
+#   - 打 tag（v*，如 v1.0.0）：构建并上传 zip 到对应 GitHub Release 资产
+name: Build DSH.app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build DSH.app
+        run: |
+          mkdir -p dist/work
+          cp packages/dsh-app-hub/assets/DSHApp/icon-512.png dist/work/icon-512.png
+          bash packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh "$PWD/dist/DSH.app" "$PWD/dist/work"
+
+      - name: Sanity check
+        run: |
+          test -x dist/DSH.app/Contents/MacOS/DSHApp
+          test -f dist/DSH.app/Contents/Resources/icon.icns
+          echo "binary + icon OK"
+
+      - name: Package zip
+        run: |
+          cd dist
+          ditto -c -k --keepParent DSH.app DSH.app.zip
+          shasum -a 256 DSH.app.zip
+
+      - name: Publish to Release (tag push)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/DSH.app.zip
+
+      - name: Upload artifact (manual run)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: DSH.app.zip
+          path: dist/DSH.app.zip
