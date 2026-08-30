@@ -53,6 +53,7 @@ return {
       const [updateResult, setUpdateResult] = React.useState(null)
       const [working, setWorking] = React.useState(null)
       const [restartMsg, setRestartMsg] = React.useState(null)
+      const [confirmAction, setConfirmAction] = React.useState(null)
 
       const run = rpcPending
 
@@ -78,11 +79,12 @@ return {
       }
 
       const doUpdate = () => {
-        let okFlag = true
-        try {
-          if (window.confirm && !window.confirm('执行 npm install -g @deepseek-ai/dsh@latest 并更新全局 CLI？\n更新后需要重启 dsh（下次打开应用即生效）。')) okFlag = false
-        } catch (e) {}
-        if (!okFlag) return
+        if (confirmAction !== 'update') {
+          setConfirmAction('update')
+          try { window.setTimeout(function(){ setConfirmAction(function(c){ return c === 'update' ? null : c }) }, 3000) } catch (e) {}
+          return
+        }
+        setConfirmAction(null)
         setUpdating(true)
         setUpdateResult(null)
         call('app-update', {})
@@ -95,11 +97,12 @@ return {
       }
 
       const doRestart = () => {
-        let okFlag = true
-        try {
-          if (window.confirm && !window.confirm('重启 dsh web 服务？\n当前会话会先断开，由新服务自动恢复。')) okFlag = false
-        } catch (e) {}
-        if (!okFlag) return
+        if (confirmAction !== 'restart') {
+          setConfirmAction('restart')
+          try { window.setTimeout(function(){ setConfirmAction(function(c){ return c === 'restart' ? null : c }) }, 3000) } catch (e) {}
+          return
+        }
+        setConfirmAction(null)
         setWorking('restart')
         setRestartMsg('正在重启（约 3-6 秒）…')
         host.call('app-launcher', { action: 'restart' })
@@ -142,7 +145,7 @@ return {
                     working === 'launch' ? '打开中…' : '打开 DSH'),
                   h('button',
                     { className: 'dsh-app-btn', onClick: doRestart, disabled: working === 'restart' },
-                    working === 'restart' ? '重启中…' : '重启服务'),
+                    working === 'restart' ? '重启中…' : (confirmAction === 'restart' ? '确认重启？' : '重启服务')),
                 ]),
                 restartMsg
                   ? h('div', { className: /失败|未生效/.test(restartMsg) ? 'dsh-app-err' : 'dsh-app-muted' }, restartMsg)
@@ -173,7 +176,7 @@ return {
           info.loading ? '检查中…' : '检查更新'),
         h('button',
           { className: 'dsh-app-btn', onClick: doUpdate, disabled: updating || !!info.error },
-          updating ? '更新中…' : '立即更新全局 CLI'),
+          updating ? '更新中…' : (confirmAction === 'update' ? '确认更新？' : '立即更新全局 CLI')),
       ])
 
       const resultNode = updateResult
@@ -207,6 +210,7 @@ return {
       const [dismissed, setDismissed] = React.useState(false)
       const [busy, setBusy] = React.useState(null)
       const [result, setResult] = React.useState(null)
+      const [confirmAction, setConfirmAction] = React.useState(null)
 
       const check = React.useCallback(() => {
         host.call('app-info', {})
@@ -227,11 +231,12 @@ return {
       if (!showUpdate) return null
 
       const doUpdate = () => {
-        let okFlag = true
-        try {
-          if (window.confirm && !window.confirm('发现新版本 ' + d.latest + '（当前 ' + (d.installed || '?') + '）。\n执行 npm install -g @deepseek-ai/dsh@latest？')) okFlag = false
-        } catch (e) {}
-        if (!okFlag) return
+        if (confirmAction !== 'update') {
+          setConfirmAction('update')
+          try { window.setTimeout(function(){ setConfirmAction(function(c){ return c === 'update' ? null : c }) }, 3000) } catch (e) {}
+          return
+        }
+        setConfirmAction(null)
         setBusy('updating')
         setResult(null)
         host.call('app-update', {})
@@ -241,11 +246,12 @@ return {
       }
 
       const doRestart = () => {
-        let okFlag = true
-        try {
-          if (window.confirm && !window.confirm('重启 dsh web 服务使新版本生效？\n当前会话会先断开，由 DSH 应用自动拉起并恢复。')) okFlag = false
-        } catch (e) {}
-        if (!okFlag) return
+        if (confirmAction !== 'restart') {
+          setConfirmAction('restart')
+          try { window.setTimeout(function(){ setConfirmAction(function(c){ return c === 'restart' ? null : c }) }, 3000) } catch (e) {}
+          return
+        }
+        setConfirmAction(null)
         setBusy('restart')
         host.call('app-launcher', { action: 'restart' }).catch(() => {})
       }
@@ -259,10 +265,10 @@ return {
         failed ? h('span', { className: 'dsh-app-err' }, '更新失败：' + (result.stderr || '')) : null,
         busy === 'updating' ? h('span', { className: 'dsh-app-muted' }, '更新中…') : null,
         !updated && busy === null
-          ? h('button', { className: 'dsh-app-banner-btn', onClick: doUpdate }, '更新')
+          ? h('button', { className: 'dsh-app-banner-btn', onClick: doUpdate }, confirmAction === 'update' ? '确认更新？' : '更新')
           : null,
         updated && busy === null
-          ? h('button', { className: 'dsh-app-banner-btn', onClick: doRestart }, '重启服务生效')
+          ? h('button', { className: 'dsh-app-banner-btn', onClick: doRestart }, confirmAction === 'restart' ? '确认重启？' : '重启服务生效')
           : null,
         h('button', { className: 'dsh-app-banner-close', onClick: () => setDismissed(true) }, '✕'),
       ])
