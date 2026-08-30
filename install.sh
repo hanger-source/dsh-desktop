@@ -48,3 +48,17 @@ else
   echo "跳过壳：未找到 $SHELL_ASSETS/dsh-app-build.sh"
 fi
 echo "install.sh 完成。"
+
+# ---- 安装技能（仓库 skills/ → 用户技能目录 ~/.dsh/skills/） ----
+# DSH 技能发现根 = 工作区 .dsh/skills（本机即 $DSH_HOME/skills），拷贝即被会话收录。
+SKILL_ROOT="$DST_HOME/skills"
+if [ -d "$REPO/skills" ]; then
+  for sdir in "$REPO"/skills/*/; do
+    [ -d "$sdir" ] || continue
+    [ -f "$sdir/SKILL.md" ] || continue
+    key="$(basename "$sdir")"
+    mkdir -p "$SKILL_ROOT/$key"
+    cp "$sdir/SKILL.md" "$SKILL_ROOT/$key/SKILL.md"
+    echo "skill: $key -> $SKILL_ROOT/$key/SKILL.md"
+  done
+fi
