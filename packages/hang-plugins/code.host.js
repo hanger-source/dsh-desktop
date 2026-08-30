@@ -89,6 +89,29 @@ done
       return out.split('\n').filter((l) => l.length > 0)
     }
 
+
+    // 自动授权（含后续版本）：模拟面板“允许未来版本”的双勾确认。返回错误文本或 null。
+    async function autoApprove(runner, agent, pluginId, packageId, runRes) {
+      if (runRes && runRes.status === 'awaiting-approval') {
+        let requestId = null
+        try {
+          const ps = runner.listPlugins(agent)
+          const p = ps.find((x) => x.pluginId === pluginId)
+          requestId = p && p.latestRun && p.latestRun.approvalRequestId
+        } catch (e) { /* ignore */ }
+        if (requestId) {
+          try {
+            const r = await runner.runHostHalf(agent, pluginId, packageId, 'run', requestId, true)
+            if (r && r.ok === false) return (r.message || '授权启动失败')
+            return null
+          } catch (e) {
+            return '授权启动失败：' + String((e && e.message) || e)
+          }
+        }
+      }
+      return null
+    }
+
     harness.handle('pstore.list', async () => {
       const lines = await readLines(LIST_SCRIPT(REPO))
       const res = { repoPath: REPO, remote: REMOTE, repoExists: false, commit: null, packages: [] }
@@ -230,7 +253,9 @@ echo "CHANGED=$CHANGED"
         try {
           const runRes = await runner.run(agent, plugin.pluginId, target, 'run')
           if (runRes && runRes.ok === false) return { ok: false, error: runRes.message || runRes.reason || '启动失败' }
-          return { ok: true, text: '已启用：' + plugin.pluginId }
+          const err = await autoApprove(runner, agent, plugin.pluginId, target, runRes)
+          if (err) return { ok: false, error: err }
+          return { ok: true, text: '已启用（含后续版本授权）：' + plugin.pluginId }
         } catch (e) {
           return { ok: false, error: '启用失败：' + String((e && e.message) || e) }
         }
@@ -257,25 +282,9 @@ echo "CHANGED=$CHANGED"
         if (runRes && runRes.ok === false) {
           return { ok: false, error: runRes.message || runRes.reason || '启动失败' }
         }
-        // 自动授权（含后续版本）：模拟面板“允许未来版本”的双勾确认。
-        if (runRes && runRes.status === 'awaiting-approval') {
-          let requestId = null
-          try {
-            const ps = runner.listPlugins(agent)
-            const p = ps.find((x) => x.pluginId === def.pluginId)
-            requestId = p && p.latestRun && p.latestRun.approvalRequestId
-          } catch (e) { /* ignore */ }
-          if (requestId) {
-            try {
-              const r = await runner.runHostHalf(agent, def.pluginId, def.packageId, 'run', requestId, true)
-              if (r && r.ok === false) return { ok: false, error: r.message || '授权启动失败' }
-              return { ok: true, text: '已启用（含后续版本授权）：' + def.pluginId }
-            } catch (e) {
-              return { ok: false, error: '授权启动失败：' + String((e && e.message) || e) }
-            }
-          }
-        }
-        return { ok: true, text: '已启用：' + def.pluginId }
+        const err = await autoApprove(runner, agent, def.pluginId, def.packageId, runRes)
+        if (err) return { ok: false, error: err }
+        return { ok: true, text: '已启用（含后续版本授权）：' + def.pluginId }
       } catch (e) {
         return { ok: false, error: '启用失败：' + String((e && e.message) || e) }
       }
