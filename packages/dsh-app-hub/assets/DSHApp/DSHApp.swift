@@ -176,6 +176,15 @@ final class ServerManager {
     /// 插件自动启用已由 dsh-boot 兜底（下次打开 app → 新会话自动拉起），
     /// 所以退出 = 整个应用（含服务）关闭，符合"⌘Q 退出"直觉。
     func stop() {
+        // 1) 自己拉起的 dsh web：直接 SIGTERM（Darwin 函数，不启动子进程/管道，绝无阻塞）。
+        if let proc = proc {
+            let pid = proc.processIdentifier
+            if pid > 0 {
+                Darwin.kill(pid, SIGTERM)
+                logToFile("dsh-app: quit -> SIGTERM dsh web pid=" + String(pid))
+            }
+        }
+        // 2) 兜底：清理监听 3080 的残留进程（如历史复用的旧服务）。
         killPort(3080)
         proc = nil
         try? logFH?.close()
@@ -183,26 +192,31 @@ final class ServerManager {
     }
 
     private func killPort(_ port: Int) {
+        // 踩坑：不能再用「管道 + readDataToEndOfFile」读 lsof 输出——
+        // lsof 的子进程会残留管道写端 FD，read 永远等不到 EOF，
+        // 导致 ⌘Q 退出时主线程永久阻塞（App 未响应、服务杀不掉）。
+        // 改用临时文件接收输出：写文件不阻塞 lsof 退出，waitUntilExit 必然返回。
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("dsh-lsof-\(port).txt")
+        try? "".write(to: tmp, atomically: true, encoding: .utf8)
         let lsof = Process()
         lsof.executableURL = URL(fileURLWithPath: "/usr/bin/lsof")
         lsof.arguments = ["-tiTCP:\(port)", "-sTCP:LISTEN"]
-        let pipe = Pipe()
-        lsof.standardOutput = pipe
+        if let fh = FileHandle(forWritingAtPath: tmp.path) {
+            lsof.standardOutput = fh
+            lsof.standardError = fh
+        }
         try? lsof.run()
         lsof.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let text = (try? String(contentsOf: tmp, encoding: .utf8)) ?? ""
         let nl = Character(UnicodeScalar(10))
         let cr = Character(UnicodeScalar(13))
-        let pids = String(data: data, encoding: .utf8)?
-            .split(omittingEmptySubsequences: true,
-                   whereSeparator: { $0 == nl || $0 == cr || $0 == " " })
-            ?? []
+        let pids = text.split(omittingEmptySubsequences: true,
+                             whereSeparator: { $0 == nl || $0 == cr || $0 == " " })
         for pid in pids {
-            let kill = Process()
-            kill.executableURL = URL(fileURLWithPath: "/bin/kill")
-            kill.arguments = [String(pid)]
-            try? kill.run()
-            kill.waitUntilExit()
+            if let p = Int32(pid) {
+                Darwin.kill(p, SIGTERM)
+            }
         }
         logToFile("dsh-app: quit -> killed dsh web on port " + String(port))
     }
