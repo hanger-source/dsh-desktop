@@ -87,23 +87,12 @@ return {
     }
 
     harness.handle('quota.snapshot', async () => {
-      let current = null
-      const modelService = ctx.get('agentDefaultModel')
-      if (modelService !== undefined) {
-        try {
-          const sel = modelService.currentSelection()
-          current = sel ? { provider: sel.provider, model: sel.model } : null
-        } catch (e) {
-          console.error('[quota] 读取当前模型失败：', e)
-        }
-      }
-
+      // 直接查询所有已配置的数据源（不依赖当前模型 provider 的命名差异）
       const entries = []
-      const source = current && SOURCES[current.provider]
-      if (source) {
-        entries.push(await queryEntry(source.ref, source.fetch, source.meta))
+      for (const src of Object.values(SOURCES)) {
+        entries.push(await queryEntry(src.ref, src.fetch, src.meta))
       }
-      return { capturedAt: new Date().toISOString(), current, entries }
+      return { capturedAt: new Date().toISOString(), entries }
     })
   },
 }
