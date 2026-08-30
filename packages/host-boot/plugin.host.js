@@ -12,7 +12,12 @@ module.exports = {
 }
 
 async function boot(ctx) {
-  const REPO = '/Users/fuhangbo/.dsh/hang-plugins'
+  const home = await dshHome(ctx)
+  if (home === null) {
+    console.warn('[host-boot] 无法解析 DSH 主目录，跳过')
+    return
+  }
+  const REPO = home + '/hang-plugins'
   const runner = ctx.get('dynamicCordisRunner')
   if (runner === undefined) {
     console.warn('[host-boot] dynamicCordisRunner 不可用，跳过')
@@ -165,4 +170,20 @@ async function enableOne(ctx, runner, agent, meta, hostSrc, clientSrc, byBase) {
     }
     return { ok: true, text: '已启用 ' + def.pluginId }
   } catch (e) { return { ok: false, text: '启用失败：' + String((e && e.message) || e) } }
+}
+
+// 解析 DSH 主目录：$DSH_HOME 优先，默认 $HOME/.dsh（不写死用户名）。
+async function dshHome(ctx) {
+  const sub = ctx.get('subprocess')
+  if (sub === undefined) return null
+  const handle = sub.spawn({
+    argv: ['/bin/bash', '-c', 'printf "%s" "${DSH_HOME:-$HOME/.dsh}"'],
+    cwd: '/',
+    stdio: { stdin: 'ignore', stdout: { maxBytes: 8192 }, stderr: { maxBytes: 4096 } },
+    graceMs: 2000,
+  })
+  const outcome = await handle.done
+  if (outcome.exitCode !== 0) return null
+  const out = handle.collected.stdout.readFrom(0).text
+  return out.trim() || null
 }

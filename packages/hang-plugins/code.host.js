@@ -5,8 +5,10 @@
 // 统一启停：停用=runner.stop，重启=runner.run，未启用=define+run 自动激活。
 return {
   inject: ['subprocess'],
-  apply(ctx) {
-    const REPO = '/Users/fuhangbo/.dsh/hang-plugins'
+  async apply(ctx) {
+    const homeRaw = await runBash('printf "%s" "${DSH_HOME:-$HOME/.dsh}"')
+    const home = (homeRaw.out || '').trim() || '/Users/fuhangbo/.dsh'
+    const REPO = home + '/hang-plugins'
     const REMOTE = 'https://github.com/hanger-source/dsh-plugins.git'
     const HOME = '/Users/fuhangbo/.dsh'
 
