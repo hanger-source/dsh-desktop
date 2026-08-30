@@ -150,7 +150,7 @@ return {
     }
 
     // ---------- launcher app content ----------
-    // 原生壳构建脚本（含 Swift 源码）放在磁盘 ~/.dsh/dsh-app-hub/dsh-app-build.sh，可单独更新
+    // 原生壳构建脚本（含 Swift 源码）放在仓库 ~/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/，可单独更新
     const BUILD_SCRIPT_PATH = HOME + '/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh'
 
     // ---------- launcher actions ----------

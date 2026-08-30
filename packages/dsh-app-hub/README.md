@@ -17,9 +17,9 @@
 
 ## 关键文件（运行依赖）
 
-- `~/.dsh/dsh-app-hub/dsh-app-build.sh`：构建 DSH.app 的自包含脚本（含 Swift 源码 heredoc + Info.plist + 图标 icns + ad-hoc 签名）；插件 `create` 动作执行它。更新 Swift 逻辑时**需同步该脚本内嵌源码**（改 `~/projects/dsh-app-hub/DSHApp/DSHApp.swift` 后重新同步替换 heredoc 段，或直接改脚本内嵌段）。
-- `~/.dsh/dsh-app-hub/icon-512.png`：壳图标（deepseek-ai 官方图标，macOS 自动圆角）。
-- 壳日志：`~/.dsh/dsh-app-hub/shell.log`（启动/主题偏好/最终外观打点，排查先看这里）。
+- `~/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh`：构建 DSH.app 的自包含脚本（含 Swift 源码 heredoc + Info.plist + 图标 icns + ad-hoc 签名）；插件 `create` 动作执行它。更新 Swift 逻辑时**需同步该脚本内嵌源码**（改 `~/projects/dsh-app-hub/DSHApp/DSHApp.swift` 后重新同步替换 heredoc 段，或直接改脚本内嵌段）。
+- `~/.dsh/hang-plugins/.runtime/dsh-app-hub/icon-512.png`：壳图标（deepseek-ai 官方图标，macOS 自动圆角）。
+- 壳日志：`~/.dsh/hang-plugins/.runtime/dsh-app-hub/shell.log`（启动/主题偏好/最终外观打点，排查先看这里）。
 
 ## 踩过的坑（对应代码注释）
 
@@ -42,4 +42,4 @@
 - `icon-512.png`：壳图标（deepseek-ai 官方标，macOS 自动圆角）
 - `svg2png.swift` / `icon-make.swift`：图标生成辅助脚本（可选）
 
-重建：`bash packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh ~/Applications ~/.dsh/dsh-app-hub`
+重建：`bash packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh`

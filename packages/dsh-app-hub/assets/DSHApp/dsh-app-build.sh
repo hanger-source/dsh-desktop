@@ -1,10 +1,10 @@
 #!/bin/bash
 # 由 dsh 插件生成/更新：构建原生壳 DSH.app（Swift + AppKit + WKWebView）。
-# 用法: bash dsh-app-build.sh [输出目录，默认 ~/Applications] [工作目录，默认 ~/.dsh/dsh-app-hub]
+# 用法: bash dsh-app-build.sh [输出目录，默认 ~/Applications/DSH.app] [工作目录，默认 ~/.dsh/hang-plugins/.runtime/dsh-app-hub]
 set -euo pipefail
 
 APP="${1:-$HOME/Applications/DSH.app}"
-WORK="${2:-$HOME/.dsh/dsh-app-hub}"
+WORK="${2:-$HOME/.dsh/hang-plugins/.runtime/dsh-app-hub}"
 BIN_DIR="$APP/Contents/MacOS"
 RS_DIR="$APP/Contents/Resources"
 ICON_SRC="$WORK"
@@ -199,7 +199,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         ServerManager.shared.ensureUp { [weak self] up in
             guard let self else { return }
             if !up {
-                self.showFatal("dsh web 启动失败 —— 请检查 ~/.dsh/dsh-app-hub/server.log")
+                self.showFatal("dsh web 启动失败 —— 请检查 ~/.dsh/hang-plugins/.runtime/dsh-app-hub/server.log")
                 return
             }
             self.wasUp = true

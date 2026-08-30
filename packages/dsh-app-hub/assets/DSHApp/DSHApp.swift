@@ -184,7 +184,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         ServerManager.shared.ensureUp { [weak self] up in
             guard let self else { return }
             if !up {
-                self.showFatal("dsh web 启动失败 —— 请检查 ~/.dsh/dsh-app-hub/server.log")
+                self.showFatal("dsh web 启动失败 —— 请检查 ~/.dsh/hang-plugins/.runtime/dsh-app-hub/server.log")
                 return
             }
             self.wasUp = true
