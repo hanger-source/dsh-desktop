@@ -9,6 +9,25 @@ const Path = require('node:path')
 
 module.exports = {
   apply(ctx) {
+    // 父进程监控：DSH.app 通过 DSH_PARENT_PID 告诉 dsh web 自己的 PID，
+    // dsh web 每 2 秒检查父进程是否存活；父进程退出（⌘Q 或强杀）→ 自行关闭。
+    // 这是"退出 App = 关闭服务"的兜底，不依赖 App 主线程是否响应。
+    const parentPid = Number(process.env.DSH_PARENT_PID || 0)
+    if (parentPid > 0) {
+      const parentTimer = ctx.setInterval(() => {
+        try {
+          process.kill(parentPid, 0)
+        } catch (e) {
+          if (e && e.code === 'ESRCH') {
+            ctx.logger?.info?.('[dsh-boot] 父进程(DSH.app)已退出，dsh web 自行关闭')
+            process.exit(0)
+          }
+        }
+      }, 2000)
+      ctx.on('dispose', () => parentTimer())
+      ctx.logger?.info?.('[dsh-boot] 父进程监控已开启 pid=' + parentPid)
+    }
+
     const webServer = ctx.get('webServer')
     if (!webServer) {
       ctx.logger?.info?.('[dsh-boot] webServer 不可用，跳过端点注册')

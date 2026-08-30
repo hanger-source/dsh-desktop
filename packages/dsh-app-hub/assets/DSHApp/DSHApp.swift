@@ -59,6 +59,8 @@ final class ServerManager {
         // 必须显式带上 Homebrew 的 PATH，否则找不到 node 导致启动失败。
         var env = ProcessInfo.processInfo.environment
         env["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        // 告诉 dsh web 父进程是谁：App 退出（⌘Q 或强杀）→ dsh-boot 检测到父进程死亡 → 服务自行关闭
+        env["DSH_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
         p.environment = env
         p.executableURL = URL(fileURLWithPath: dsh)
         p.arguments = ["--profile", "web", "--patch", Env.homeDir() + "/.dsh/hang-plugins/overlays/web/web-boot.yml", "--no-open"]
