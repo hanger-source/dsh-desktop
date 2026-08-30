@@ -103,9 +103,12 @@ done
         } catch (e) { /* ignore */ }
         if (requestId && pluginRunId) {
           try {
-            // 宿主侧自动授权（含后续版本）；浏览器首次加载仍需用户在卡片点一次允许。
             const r = await runner.runHostHalf(agent, pluginId, packageId, 'run', requestId, true)
             if (r && r.ok === false) return (r.message || '授权启动失败')
+            // 结算并广播：宿主侧授权后主动让浏览器审批卡片消失、client 自动加载。
+            try {
+              await runner.resolveRequestRun(requestId, { ok: true, pluginRunId: String(pluginRunId), packageId, mode: 'run' })
+            } catch (e) { /* 结算失败不致命：插件已授权并启动 */ }
             return null
           } catch (e) {
             return '授权启动失败：' + String((e && e.message) || e)
