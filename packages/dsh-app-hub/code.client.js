@@ -93,6 +93,15 @@ return {
           .then(() => setUpdating(false))
       }
 
+      const doRestart = () => {
+        let okFlag = true
+        try {
+          if (window.confirm && !window.confirm('重启 dsh web 服务？\n当前会话会先断开，由 DSH 应用自动拉起并恢复。')) okFlag = false
+        } catch (e) {}
+        if (!okFlag) return
+        host.call('app-launcher', { action: 'restart' }).catch(() => {})
+      }
+
       const a = app.data
       const d = info.data
 
@@ -114,6 +123,9 @@ return {
                   h('button',
                     { className: 'dsh-app-btn', onClick: () => act('launch', setWorking), disabled: working === 'launch' },
                     working === 'launch' ? '打开中…' : '打开 DSH'),
+                  h('button',
+                    { className: 'dsh-app-btn', onClick: doRestart, disabled: working === 'restart' },
+                    working === 'restart' ? '重启中…' : '重启服务'),
                 ]),
                 h('div', { className: 'dsh-app-muted' }, '「打开 DSH」会确保 dsh web 在后台启动（端口 ' + (a ? a.port : 3080) + '），然后打开窗口；已装到 ' + (a ? a.appDir : '~/Applications/DSH.app') + ' 后，双击图标效果相同。'),
               ],
