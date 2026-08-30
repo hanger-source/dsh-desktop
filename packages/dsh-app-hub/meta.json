@@ -1,0 +1,1 @@
+{ "name": "dsh-app-hub 更新条", "purpose": "DSH.app 原生壳 + 更新条插件（状态行与服务能力）", "idPrefix": "apph", "matchPrefix": ["apph", "hub"] }
