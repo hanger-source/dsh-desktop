@@ -28,32 +28,31 @@ module.exports = {
         try {
           const url = new URL(req.url, 'http://localhost')
           const want = url.searchParams.get('key')
-          const out = []
-          if (!Fs.existsSync(repo)) {
-            res.end(JSON.stringify({ ok: false, error: 'repo missing: ' + repo }))
+          const agent = pickAgent(agents)
+          if (!agent) {
+            res.end(JSON.stringify({ ok: false, pending: true, error: 'no live session agent yet' }))
             return
           }
-          const keys = want ? want.split(',') : null
-          for (const dir of Fs.readdirSync(Path.join(repo, 'packages'))) {
-            if (keys && !keys.includes(dir)) continue
-            const pkg = Path.join(repo, 'packages', dir)
-            const metaPath = Path.join(pkg, 'meta.json')
-            if (!Fs.existsSync(metaPath)) continue
-            let meta
-            try { meta = JSON.parse(Fs.readFileSync(metaPath, 'utf8')) } catch (e) { continue }
-            if (meta.ui === false) continue
-            if (meta.self === true) continue
-            const hostSrc = Fs.existsSync(Path.join(pkg, 'code.host.js')) ? Fs.readFileSync(Path.join(pkg, 'code.host.js'), 'utf8') : ''
-            const clientSrc = Fs.existsSync(Path.join(pkg, 'code.client.js')) ? Fs.readFileSync(Path.join(pkg, 'code.client.js'), 'utf8') : ''
-            if (!hostSrc && !clientSrc) continue
-            const result = await enableOne(runner, agents, meta, hostSrc, clientSrc)
-            out.push({ key: dir, ...result })
-          }
+          const out = await enableAll(runner, agent, want ? want.split(',') : null)
           res.end(JSON.stringify({ ok: true, results: out }))
         } catch (e) {
           res.end(JSON.stringify({ ok: false, error: String((e && e.message) || e) }))
         }
       },
+    })
+
+    // 新会话诞生 → 自动启用仓库 UI 插件
+    ctx.on('agent/created', (payload) => {
+      const agent = payload && payload.agent
+      if (!agent) return
+      setTimeout(async () => {
+        try {
+          const results = await enableAll(runner, agent, null)
+          ctx.logger?.info?.('[dsh-boot] auto-enable on new session: ' + JSON.stringify(results))
+        } catch (e) {
+          ctx.logger?.warn?.('[dsh-boot] auto-enable failed: ' + String((e && e.message) || e))
+        }
+      }, 1500)
     })
   },
 }
@@ -110,4 +109,38 @@ async function enableOne(runner, agents, meta, hostSrc, clientSrc) {
     }
     return { ok: true, text: '已启用 ' + def.pluginId }
   } catch (e) { return { ok: false, text: '启用失败：' + String((e && e.message) || e) } }
+}
+
+
+function pickAgent(agents) {
+  if (!agents) return null
+  try {
+    try { return agents.requireInitiator() } catch (e) { /* ignore */ }
+    const roots = agents.roots()
+    return (roots && roots[0]) || null
+  } catch (e) {
+    return null
+  }
+}
+
+async function enableAll(runner, agent, keys) {
+  if (!runner || !agent) return []
+  const home = process.env.DSH_HOME || process.env.HOME
+  const repo = Path.join(home, '.dsh', 'hang-plugins')
+  const out = []
+  if (!Fs.existsSync(Path.join(repo, 'packages'))) return out
+  for (const dir of Fs.readdirSync(Path.join(repo, 'packages'))) {
+    if (keys && !keys.includes(dir)) continue
+    const pkg = Path.join(repo, 'packages', dir)
+    if (!Fs.existsSync(Path.join(pkg, 'meta.json'))) continue
+    let meta
+    try { meta = JSON.parse(Fs.readFileSync(Path.join(pkg, 'meta.json'), 'utf8')) } catch (e) { continue }
+    if (meta.ui === false) continue
+    if (meta.self === true) continue
+    const hostSrc = Fs.existsSync(Path.join(pkg, 'code.host.js')) ? Fs.readFileSync(Path.join(pkg, 'code.host.js'), 'utf8') : ''
+    const clientSrc = Fs.existsSync(Path.join(pkg, 'code.client.js')) ? Fs.readFileSync(Path.join(pkg, 'code.client.js'), 'utf8') : ''
+    if (!hostSrc && !clientSrc) continue
+    out.push({ key: dir, ...(await enableOne(runner, agent, meta, hostSrc, clientSrc)) })
+  }
+  return out
 }
