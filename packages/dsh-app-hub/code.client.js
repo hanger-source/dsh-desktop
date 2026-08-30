@@ -52,6 +52,7 @@ return {
       const [updating, setUpdating] = React.useState(false)
       const [updateResult, setUpdateResult] = React.useState(null)
       const [working, setWorking] = React.useState(null)
+      const [restartMsg, setRestartMsg] = React.useState(null)
 
       const run = rpcPending
 
@@ -96,10 +97,26 @@ return {
       const doRestart = () => {
         let okFlag = true
         try {
-          if (window.confirm && !window.confirm('重启 dsh web 服务？\n当前会话会先断开，由 DSH 应用自动拉起并恢复。')) okFlag = false
+          if (window.confirm && !window.confirm('重启 dsh web 服务？\n当前会话会先断开，由新服务自动恢复。')) okFlag = false
         } catch (e) {}
         if (!okFlag) return
-        host.call('app-launcher', { action: 'restart' }).catch(() => {})
+        setWorking('restart')
+        setRestartMsg('正在重启（约 3-6 秒）…')
+        host.call('app-launcher', { action: 'restart' })
+          .then((r) => {
+            setWorking(null)
+            if (r && r.ok) {
+              setRestartMsg('已发送重启，服务约 3-6 秒恢复（页面会短暂断开重连）。')
+              run(setApp)(call('app-launcher', { action: 'status' }))
+            } else {
+              setRestartMsg('重启未生效：' + (r && r.detail ? String(r.detail).slice(0, 140) : '无输出') +
+                (r && r.sandbox && r.sandbox.denied ? ' —— 沙箱拒绝了 kill，请在终端执行：lsof -tiTCP:3080 | xargs kill' : ''))
+            }
+          })
+          .catch((e) => {
+            setWorking(null)
+            setRestartMsg('重启失败：' + String((e && e.message) || e))
+          })
       }
 
       const a = app.data
@@ -127,6 +144,9 @@ return {
                     { className: 'dsh-app-btn', onClick: doRestart, disabled: working === 'restart' },
                     working === 'restart' ? '重启中…' : '重启服务'),
                 ]),
+                restartMsg
+                  ? h('div', { className: /失败|未生效/.test(restartMsg) ? 'dsh-app-err' : 'dsh-app-muted' }, restartMsg)
+                  : null,
                 h('div', { className: 'dsh-app-muted' }, '「打开 DSH」会确保 dsh web 在后台启动（端口 ' + (a ? a.port : 3080) + '），然后打开窗口；已装到 ' + (a ? a.appDir : '~/Applications/DSH.app') + ' 后，双击图标效果相同。'),
               ],
       ])

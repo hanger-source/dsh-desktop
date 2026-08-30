@@ -192,7 +192,12 @@ return {
       const boot = 'sleep 3; /usr/bin/nohup /opt/homebrew/bin/dsh web --no-open >>' + LOG_DIR + '/server.log 2>&1 &'
       await runCmd('/bin/bash -c ' + JSON.stringify(boot), 8000, 1024)
       const res = await runCmd('/usr/sbin/lsof -tiTCP:3080 -sTCP:LISTEN | /usr/bin/xargs /bin/kill 2>/dev/null; true', 15000, 2048)
-      return { ok: res.exitCode === 0, detail: res.stderr || res.stdout, status: await launcherStatus() }
+      return {
+        ok: res.exitCode === 0,
+        detail: res.stderr || res.stdout,
+        sandbox: res.sandbox || null,
+        status: await launcherStatus(),
+      }
     }
 
     const launcher = async (args) => {
