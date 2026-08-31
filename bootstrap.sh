@@ -29,15 +29,14 @@ if [ -d "$REPO/skills" ]; then
 fi
 
 echo
-echo "[3/3] 安装 DSH.app 原生壳 + 技能（自动启用由 dsh-boot 在 App overlay 里承担）..."
+echo "[3/3] 安装 DSH.app 原生壳 + 技能（App overlay 自动定义并挂载插件）..."
 DSH_BOOT_NO_SHELL="${DSH_BOOT_NO_SHELL:-0}" bash "$REPO/install.sh"
 
 echo
 echo "完成，全部就绪："
 echo "  · 仓库：$REPO"
 echo "  · 技能：$SKILL_DST"
-echo "  · 自动启用：dsh-boot（App 启动时经 overlays/web/web-boot.yml 注入，会话创建自动拉起 UI 插件）"
+echo "  · 自动启用：Host dsh-boot 定义 + 静态 Client bootstrap 挂载（无需动态审批）"
 echo
-echo "打开 DSH.app：bootstrap 自动同步仓库/技能，dsh-boot 在会话创建时自动把"
-echo "quota-monitor、dsh-app-hub 等 UI 插件 define + run 拉起；宿主重启/新会话自动恢复。"
-echo "命令行兜底：curl 'http://127.0.0.1:3080/api/dsh-plugins/enable?key=<插件key>'"
+echo "打开 DSH.app：bootstrap 自动同步仓库/技能；Host 定义插件，静态 Client bootstrap"
+echo "在启动、服务重启、页面重载与新会话切换后自动挂载 UI 插件。"

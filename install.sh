@@ -1,15 +1,13 @@
 #!/usr/bin/env bash
-# 安装 DSH.app 原生壳 + 技能。插件自动启用由 dsh-boot 承担（App overlay 注入，
-# 会话创建时自动 define+run 仓库 packages/ 下的 UI 插件）。
+# 安装 DSH.app 原生壳 + 技能。App overlay 的 Host bootstrap 定义仓库插件，
+# 静态 Client bootstrap 在启动、服务重启与页面重载后自动挂载它们。
 set -euo pipefail
 
 DST_HOME="${DSH_HOME:-$HOME/.dsh}"
 REPO="${DST_HOME}/hang-plugins"
 
-# 自动启用已改由 dsh-boot 承担：它经 App 启动 overlay（overlays/web/web-boot.yml 的 insert 注入）
-# 加载进 web profile，在新会话（agent/created）时自动 define+run 启用仓库 packages/ 下的 UI 插件，
-# 并提供 /api/dsh-plugins/enable 端点。不再安装 agent-preset（预设是 id 选择制，不会自动挂载）。
-echo "自动启用：由 dsh-boot（App overlay 注入）在会话创建时自动拉起 UI 插件"
+# 不再安装 agent-preset（预设是 id 选择制，不会自动挂载）。
+echo "自动启用：Host 定义 + 静态 Client bootstrap 自动挂载（无需动态审批）"
 # ---- 安装原生壳 DSH.app（DSH_BOOT_NO_SHELL=1 时跳过，供 app 自动引导复用） ----
 if [ "${DSH_BOOT_NO_SHELL:-0}" != "1" ]; then
 # 从 packages/dsh-app-hub/assets/DSHApp/ 用 swiftc 构建并装到 ~/Applications/DSH.app

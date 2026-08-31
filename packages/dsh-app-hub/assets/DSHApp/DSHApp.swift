@@ -138,16 +138,25 @@ final class RuntimeInstaller {
     private func generateOverlay() throws -> String {
         let templatePath = Env.pluginRepo + "/overlays/web/web-boot.yml"
         let pluginPath = Env.pluginRepo + "/overlays/web/plugins/dsh-boot.js"
+        let clientBootstrapPath = Env.pluginRepo + "/overlays/web/plugins/dsh-client-bootstrap"
         guard FileManager.default.isReadableFile(atPath: pluginPath) else {
             throw messageError("插件仓库缺少 dsh-boot：\n\(pluginPath)")
+        }
+        guard FileManager.default.isReadableFile(atPath: clientBootstrapPath + "/package.json") else {
+            throw messageError("插件仓库缺少 dsh-client-bootstrap：\n\(clientBootstrapPath)")
         }
         let template = try String(contentsOfFile: templatePath, encoding: .utf8)
         guard template.contains("__DSH_BOOT_PLUGIN__") else {
             throw messageError("overlay 模板缺少 __DSH_BOOT_PLUGIN__ 占位符：\n\(templatePath)")
         }
+        guard template.contains("__DSH_CLIENT_BOOTSTRAP__") else {
+            throw messageError("overlay 模板缺少 __DSH_CLIENT_BOOTSTRAP__ 占位符：\n\(templatePath)")
+        }
         try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
         let output = Env.runtimeDir + "/web-boot.generated.yml"
-        let content = template.replacingOccurrences(of: "__DSH_BOOT_PLUGIN__", with: pluginPath)
+        let content = template
+            .replacingOccurrences(of: "__DSH_BOOT_PLUGIN__", with: pluginPath)
+            .replacingOccurrences(of: "__DSH_CLIENT_BOOTSTRAP__", with: clientBootstrapPath)
         try content.write(toFile: output, atomically: true, encoding: .utf8)
         return output
     }

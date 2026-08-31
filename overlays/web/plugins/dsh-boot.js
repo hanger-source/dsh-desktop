@@ -1,6 +1,7 @@
 // dsh-boot —— 宿主侧启动引导钩子（web profile 内，经 App overlay --patch 的 insert 注入）。
-// 新会话（agent/created）时自动 define+run 启用仓库 packages/ 下带 UI 的插件，
-// 并提供 GET /api/dsh-plugins/enable 手动启用端点。
+// 首个可用 Agent 出现时定义一组进程级仓库 UI 插件；后续 agent/created 由进程级幂等挡住。
+// 浏览器半由静态 dsh-client-bootstrap 通过 startUserRun 自动挂载：启动、服务重启与
+// 页面重载都走同一条可信 Client 生命周期，不生成动态插件审批请求。
 'use strict'
 
 const Fs = require('node:fs')
@@ -10,6 +11,7 @@ const Path = require('node:path')
 // （恢复会话/前端激活各触发一次 agent/created），没有这个去重会重复定义插件，
 // 同一 UI 被注入两份（曾出现两个 dsh-app-hub）。
 const enabledKeys = new Set()
+const enablingKeys = new Set()
 
 function logFile(dshHome, line) {
   try {
@@ -38,7 +40,7 @@ module.exports = {
       ctx.effect(() => () => clearInterval(timer))
     }
 
-    // 新会话诞生 → 自动启用仓库 UI 插件（agent 直接来自事件 payload）
+    // 首个 Agent 诞生 → 定义进程级仓库 UI 插件（agent 只提供动态 registry 所需的 owner）
     ctx.on('agent/created', (payload) => {
       const agent = payload && payload.agent
       if (!agent) return
@@ -100,18 +102,9 @@ async function enableOne(runner, agent, meta, hostSrc, clientSrc) {
             code: { host: hostSrc || undefined, client: clientSrc || undefined },
             sessionId: agent.id,
           })
-          const mode = current.currentPackageId ? 'update' : 'run'
-          const runRes = await runner.run(agent, plugin.pluginId, def.packageId, mode)
-          if (runRes && runRes.ok === false) {
-            const pending = /approv|pending/i.test(String(runRes.reason || runRes.message || ''))
-            return { ok: false, pending, text: runRes.message || runRes.reason || '更新失败' }
-          }
-          return { ok: true, text: '已更新 ' + plugin.pluginId }
+          return { ok: true, text: '已定义更新 ' + plugin.pluginId + '/' + def.packageId }
         }
-        if (plugin.activeRun) return { ok: true, text: '已运行 ' + plugin.pluginId }
-        const runRes = await runner.run(agent, plugin.pluginId, target, 'run')
-        if (runRes && runRes.ok === false) return { ok: false, text: runRes.message || runRes.reason || '重启失败' }
-        return { ok: true, text: '已重启 ' + plugin.pluginId }
+        return { ok: true, text: '已定义 ' + plugin.pluginId }
       } catch (e) { return { ok: false, text: String((e && e.message) || e) } }
     }
   }
@@ -126,12 +119,7 @@ async function enableOne(runner, agent, meta, hostSrc, clientSrc) {
     })
   } catch (e) { return { ok: false, text: '定义失败：' + String((e && e.message) || e) } }
   try {
-    const runRes = await runner.run(agent, def.pluginId, def.packageId, 'run')
-    if (runRes && runRes.ok === false) {
-      const pending = /approv|pending/i.test(String(runRes.reason || runRes.message || ''))
-      return { ok: false, pending, text: runRes.message || runRes.reason || '启动失败' }
-    }
-    return { ok: true, text: '已启用 ' + def.pluginId }
+    return { ok: true, text: '已定义 ' + def.pluginId + '/' + def.packageId }
   } catch (e) { return { ok: false, text: '启用失败：' + String((e && e.message) || e) } }
 }
 
@@ -142,8 +130,8 @@ async function enableAll(ctx, agent, keys, repo, dshHome) {
   if (!Fs.existsSync(Path.join(repo, 'packages'))) return out
   for (const dir of Fs.readdirSync(Path.join(repo, 'packages'))) {
     if (keys && !keys.includes(dir)) continue
-    if (enabledKeys.has(dir)) {
-      out.push({ key: dir, ok: true, text: '已启用' })
+    if (enabledKeys.has(dir) || enablingKeys.has(dir)) {
+      out.push({ key: dir, ok: true, text: enabledKeys.has(dir) ? '已定义' : '定义中' })
       continue
     }
     const pkg = Path.join(repo, 'packages', dir)
@@ -154,7 +142,13 @@ async function enableAll(ctx, agent, keys, repo, dshHome) {
     const hostSrc = Fs.existsSync(Path.join(pkg, 'code.host.js')) ? Fs.readFileSync(Path.join(pkg, 'code.host.js'), 'utf8') : ''
     const clientSrc = Fs.existsSync(Path.join(pkg, 'code.client.js')) ? Fs.readFileSync(Path.join(pkg, 'code.client.js'), 'utf8') : ''
     if (!hostSrc && !clientSrc) continue
-    const r = await enableOne(runner, agent, meta, hostSrc, clientSrc)
+    enablingKeys.add(dir)
+    let r
+    try {
+      r = await enableOne(runner, agent, meta, hostSrc, clientSrc)
+    } finally {
+      enablingKeys.delete(dir)
+    }
     out.push({ key: dir, ...r })
     if (r && r.ok === true) enabledKeys.add(dir)
   }
