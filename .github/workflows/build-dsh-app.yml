@@ -92,16 +92,13 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
-          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-            if git rev-parse "$TAG" >/dev/null 2>&1; then
-              [ "$(git rev-list -n 1 "$TAG")" = "$GITHUB_SHA" ] || { echo "$TAG 已指向其他提交" >&2; exit 1; }
-            else
-              git tag "$TAG" "$GITHUB_SHA"
-              git push origin "$TAG"
-            fi
-          fi
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/DSH.dmg dist/DSH.app.zip dist/SHA256SUMS.txt --clobber
           else
+            target=()
+            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+              target=(--target "$GITHUB_SHA")
+            fi
             gh release create "$TAG" dist/DSH.dmg dist/DSH.app.zip dist/SHA256SUMS.txt \
-              --generate-notes --title "DSH Desktop $VERSION"
+              --generate-notes --title "DSH Desktop $VERSION" "${target[@]}"
+          fi
