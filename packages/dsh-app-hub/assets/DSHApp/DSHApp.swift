@@ -12,6 +12,25 @@ enum Env {
     }
     static var pluginRepo: String { dshHome + "/hang-plugins" }
     static var runtimeDir: String { pluginRepo + "/.runtime/dsh-app-hub" }
+
+    static func commandEnvironment(executable: String) -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        var directories = [
+            URL(fileURLWithPath: executable).deletingLastPathComponent().path,
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ]
+        if let inherited = environment["PATH"] {
+            directories.append(contentsOf: inherited.split(separator: ":").map(String.init))
+        }
+        var seen = Set<String>()
+        environment["PATH"] = directories.filter { seen.insert($0).inserted }.joined(separator: ":")
+        return environment
+    }
 }
 
 enum StepResult {
@@ -28,7 +47,7 @@ final class RuntimeInstaller {
     static let shared = RuntimeInstaller()
 
     func prepare(
-        status: @escaping (String, String) -> Void,
+        status: @escaping (String, String, String?) -> Void,
         completion: @escaping (Result<(dsh: String, overlay: String), Error>) -> Void
     ) {
         ensureDsh(status: status) { result in
@@ -36,7 +55,7 @@ final class RuntimeInstaller {
             case .failure(let error):
                 completion(.failure(error))
             case .success(let dsh):
-                status("正在同步 DSH 插件", "正在更新插件仓库和技能…")
+                status("正在同步 DSH 插件", "正在更新插件仓库和技能…", "bootstrap.log")
                 self.runBootstrap { bootstrap in
                     switch bootstrap {
                     case .failure(let error):
@@ -55,7 +74,7 @@ final class RuntimeInstaller {
     }
 
     private func ensureDsh(
-        status: @escaping (String, String) -> Void,
+        status: @escaping (String, String, String?) -> Void,
         completion: @escaping (Result<String, Error>) -> Void
     ) {
         if let dsh = findExecutable(dshCandidates()) {
@@ -71,10 +90,11 @@ final class RuntimeInstaller {
             return
         }
 
-        status("正在安装 DeepSeek Harness", "本机尚未安装 dsh，正在执行正式发布链：\nnpm install -g @deepseek-ai/dsh@latest")
+        status("正在安装 DeepSeek Harness", "本机尚未安装 dsh，正在从 npmjs 正式 registry 解析依赖并下载软件包。", "install.log")
         runCommand(
             executable: npm,
-            arguments: ["install", "-g", "@deepseek-ai/dsh@latest"],
+            arguments: ["install", "-g", "@deepseek-ai/dsh@latest", "--registry=https://registry.npmjs.org", "--loglevel=info"],
+            environment: Env.commandEnvironment(executable: npm),
             logName: "install.log",
             timeout: 300
         ) { result in
@@ -250,8 +270,7 @@ final class ServerManager {
             FileManager.default.createFile(atPath: logPath, contents: nil)
             logHandle = FileHandle(forWritingAtPath: logPath)
 
-            var environment = ProcessInfo.processInfo.environment
-            environment["PATH"] = "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+            var environment = Env.commandEnvironment(executable: dsh)
             environment["DSH_HOME"] = Env.dshHome
             environment["DSH_PLUGIN_REPO"] = Env.pluginRepo
             environment["DSH_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
@@ -338,6 +357,9 @@ final class ServerManager {
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
+    private var progressTimer: Timer?
+    private var progressStartedAt = Date()
+    private var progressLogName: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -348,16 +370,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     private func prepareAndStart() {
-        showStatus(title: "正在启动 DeepSeek Harness", detail: "正在检查正式 dsh 运行时…")
+        showProgress(title: "正在启动 DeepSeek Harness", detail: "正在检查正式 dsh 运行时…", logName: nil)
         RuntimeInstaller.shared.prepare(
-            status: { [weak self] title, detail in self?.showStatus(title: title, detail: detail) },
+            status: { [weak self] title, detail, logName in
+                self?.showProgress(title: title, detail: detail, logName: logName)
+            },
             completion: { [weak self] result in
                 guard let self else { return }
                 switch result {
                 case .failure(let error):
                     self.showStatus(title: "DeepSeek Harness 准备失败", detail: error.localizedDescription, isError: true)
                 case .success(let launch):
-                    self.showStatus(title: "正在启动 DeepSeek Harness", detail: "正式 dsh 已就绪，正在启动 web 服务…")
+                    self.showProgress(title: "正在启动 DeepSeek Harness", detail: "正式 dsh 已就绪，正在启动 web 服务…", logName: "server.log")
                     ServerManager.shared.start(dsh: launch.dsh, overlay: launch.overlay) { result in
                         self.handleStartup(result)
                     }
@@ -369,6 +393,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private func handleStartup(_ result: StartupResult) {
         switch result {
         case .ready(let url):
+            stopProgress()
             webView.load(URLRequest(url: url))
         case .failure(let message):
             showStatus(title: "DeepSeek Harness 启动失败", detail: message, isError: true)
@@ -428,11 +453,54 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     @objc private func restartService(_ sender: Any?) {
-        showStatus(title: "正在重启 DeepSeek Harness", detail: "正在停止并重新启动 DSH.app 持有的服务…")
+        showProgress(title: "正在重启 DeepSeek Harness", detail: "正在停止并重新启动 DSH.app 持有的服务…", logName: "server.log")
         ServerManager.shared.restart { [weak self] result in self?.handleStartup(result) }
     }
 
+    private func showProgress(title: String, detail: String, logName: String?) {
+        stopProgress()
+        progressStartedAt = Date()
+        progressLogName = logName
+        let html = """
+        <!doctype html><meta charset="utf-8"><style>
+        :root{color-scheme:light dark}*{box-sizing:border-box}body{margin:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:Canvas;color:CanvasText}
+        main{max-width:820px;margin:11vh auto;padding:36px}.eyebrow{font-size:12px;font-weight:650;letter-spacing:.08em;text-transform:uppercase;opacity:.55;margin-bottom:16px}
+        h1{font-size:28px;margin:0 0 12px}p{font-size:15px;line-height:1.6;margin:0 0 24px;opacity:.72}.track{height:8px;border-radius:999px;overflow:hidden;background:color-mix(in srgb,CanvasText 10%,Canvas);margin-bottom:14px}
+        .bar{width:38%;height:100%;border-radius:999px;background:linear-gradient(90deg,#4f46e5,#8b5cf6,#4f46e5);background-size:200% 100%;animation:move 1.2s linear infinite,travel 2.2s ease-in-out infinite alternate}@keyframes move{to{background-position:-200% 0}}@keyframes travel{from{transform:translateX(-15%)}to{transform:translateX(180%)}}
+        .meta{display:flex;justify-content:space-between;gap:20px;font-size:12px;opacity:.58;margin-bottom:22px}.log{min-height:150px;max-height:270px;overflow:auto;white-space:pre-wrap;word-break:break-word;line-height:1.55;padding:16px;border-radius:12px;background:color-mix(in srgb,CanvasText 7%,Canvas);border:1px solid color-mix(in srgb,CanvasText 14%,Canvas);font:12px ui-monospace,SFMono-Regular,Menlo,monospace}
+        </style><main><div class="eyebrow">DSH.app · 正式安装链</div><h1>\(escapeHTML(title))</h1><p>\(escapeHTML(detail))</p><div class="track"><div class="bar"></div></div><div class="meta"><span id="activity">正在处理，请保持窗口打开</span><span id="elapsed">已用时 0 秒</span></div><pre class="log" id="live-log">正在等待进程输出…</pre></main>
+        <script>window.dshUpdateProgress=function(s){document.getElementById('elapsed').textContent=s.elapsed;document.getElementById('live-log').textContent=s.log||'进程仍在运行，暂时没有新输出…';var box=document.getElementById('live-log');box.scrollTop=box.scrollHeight}</script>
+        """
+        webView.loadHTMLString(html, baseURL: nil)
+        progressTimer = Timer.scheduledTimer(withTimeInterval: 0.75, repeats: true) { [weak self] _ in
+            self?.refreshProgress()
+        }
+        refreshProgress()
+    }
+
+    private func refreshProgress() {
+        let seconds = max(0, Int(Date().timeIntervalSince(progressStartedAt)))
+        let elapsed = seconds < 60 ? "已用时 \(seconds) 秒" : String(format: "已用时 %d:%02d", seconds / 60, seconds % 60)
+        var log = "正在等待进程输出…"
+        if let name = progressLogName {
+            let path = Env.runtimeDir + "/" + name
+            if let text = try? String(contentsOfFile: path, encoding: .utf8), !text.isEmpty {
+                log = text.split(separator: "\n", omittingEmptySubsequences: false).suffix(18).joined(separator: "\n")
+            }
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: ["elapsed": elapsed, "log": log]),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.dshUpdateProgress && window.dshUpdateProgress(\(json))")
+    }
+
+    private func stopProgress() {
+        progressTimer?.invalidate()
+        progressTimer = nil
+        progressLogName = nil
+    }
+
     private func showStatus(title: String, detail: String, isError: Bool = false) {
+        stopProgress()
         let color = isError ? "#d92d20" : "#4f46e5"
         let html = """
         <!doctype html><meta charset="utf-8"><style>

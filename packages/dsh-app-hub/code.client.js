@@ -163,7 +163,7 @@ return {
         updateActions,
         resultNode,
         h('div', { className: 'dsh-app-muted' }, '手动更新（推荐在终端执行后再重启）：'),
-        h('div', { className: 'dsh-app-mono' }, 'npm install -g @deepseek-ai/dsh@latest'),
+        h('div', { className: 'dsh-app-mono' }, 'npm install -g @deepseek-ai/dsh@latest --registry=https://registry.npmjs.org'),
       ])
 
       return h('div', null, [appCard, updateCard])

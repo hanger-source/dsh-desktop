@@ -5,7 +5,7 @@
 
 ## 链路总览（打开 DSH.app 之后发生的事）
 
-1. **DSH.app（Swift 壳）** 先显示窗口并检查本机是否装了正式发布的全局 `dsh`；没有则在窗口中显示安装阶段并执行 `npm install -g @deepseek-ai/dsh@latest`。安装失败直接显示 `install.log` 的错误，不打开空白 WKWebView。
+1. **DSH.app（Swift 壳）** 先显示带动态进度条、持续计时和实时日志的安装面板，再检查本机是否装了正式发布的全局 `dsh`；没有则从 npmjs 正式 registry 执行 `npm install -g @deepseek-ai/dsh@latest`。安装失败直接显示 `install.log` 的错误，不打开空白 WKWebView，也不受本机滞后镜像配置影响。
 2. App 等待内置 `bootstrap.sh` 完成：clone/pull 本仓库到 `~/.dsh/hang-plugins`、同步技能；失败直接显示 `bootstrap.log`，不继续启动旧副本。
 3. App 根据当前 `DSH_HOME` 生成含 dsh-boot 绝对路径的运行时 overlay，再以正式全局 `dsh --profile web --patch <generated-overlay> --no-open` 拉起服务。模板 `web-boot.yml`：
    - `openBrowser: false`（`--no-open` 在 `--profile` 模式下会被 dsh CLI 忽略，必须从配置层关，否则每次启动弹浏览器）；

@@ -123,7 +123,7 @@ return {
       return infoCache
     }
     const doUpdate = async () => {
-      const res = await runCmd('npm install -g @deepseek-ai/dsh@latest', 180000, 65536)
+      const res = await runCmd('npm install -g @deepseek-ai/dsh@latest --registry=https://registry.npmjs.org', 180000, 65536)
       if (res.exitCode === 0) {
         infoCache = null
         infoCacheAt = 0

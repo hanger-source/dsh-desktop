@@ -5,7 +5,7 @@
 ## 功能
 
 - **原生壳 DSH.app**（Swift + AppKit + WKWebView，`~/Applications/DSH.app`）：
-  - 窗口先显示启动阶段；本地没有正式全局 `dsh` 时显示并等待 `npm install -g @deepseek-ai/dsh@latest`，失败时直接展示安装日志。
+  - 窗口先显示动态进度条、持续计时和实时进程日志；本地没有正式全局 `dsh` 时从 npmjs 正式 registry 安装 `@deepseek-ai/dsh@latest`，不继承可能滞后的本机 registry；失败时直接展示安装日志。
   - 等待内置 `bootstrap.sh` 同步插件仓库与技能；失败时展示 bootstrap 日志，不继续加载空页面或旧副本。
   - 根据当前 `DSH_HOME` 生成 overlay，以正式全局 `dsh --profile web --patch <generated-overlay> --no-open` 启动服务，并从日志读取带 token 的 URL 后加载页面。
   - 编辑菜单（⌘C/⌘V 可用）、退出 ⌘Q；重启只操作 App 自己持有的 dsh 子进程。
