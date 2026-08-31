@@ -164,7 +164,7 @@ final class RuntimeInstaller {
             do {
                 try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
                 let logPath = Env.runtimeDir + "/" + logName
-                FileManager.default.createFile(atPath: logPath, contents: nil)
+                try Data().write(to: URL(fileURLWithPath: logPath), options: .atomic)
                 guard let log = FileHandle(forWritingAtPath: logPath) else {
                     throw self.messageError("无法写入日志：\n\(logPath)")
                 }
@@ -233,9 +233,9 @@ final class ServerManager {
     private var launch: (dsh: String, overlay: String)?
     private(set) var ownsServer = false
 
-    func isListening(completion: @escaping (Bool) -> Void) {
+    func isListening(timeout: TimeInterval = 2, completion: @escaping (Bool) -> Void) {
         var request = URLRequest(url: Env.rootURL)
-        request.timeoutInterval = 2
+        request.timeoutInterval = timeout
         URLSession.shared.dataTask(with: request) { _, response, _ in
             DispatchQueue.main.async { completion(response is HTTPURLResponse) }
         }.resume()
@@ -253,13 +253,35 @@ final class ServerManager {
     }
 
     func restart(completion: @escaping (StartupResult) -> Void) {
-        guard ownsServer, let launch else {
+        guard ownsServer, let child = process, let launch else {
             completion(.failure("当前服务不是由 DSH.app 启动，不能由 App 重启。"))
             return
         }
-        stopOwnedServer()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-            self.launchServer(dsh: launch.dsh, overlay: launch.overlay, completion: completion)
+        Darwin.kill(child.processIdentifier, SIGTERM)
+        waitForPortRelease(attempt: 0, launch: launch, completion: completion)
+    }
+
+    private func waitForPortRelease(
+        attempt: Int,
+        launch: (dsh: String, overlay: String),
+        completion: @escaping (StartupResult) -> Void
+    ) {
+        isListening(timeout: 0.4) { occupied in
+            if !occupied {
+                try? self.logHandle?.close()
+                self.logHandle = nil
+                self.process = nil
+                self.ownsServer = false
+                self.launchServer(dsh: launch.dsh, overlay: launch.overlay, completion: completion)
+                return
+            }
+            if attempt >= 30 {
+                completion(.failure("旧 dsh web 在 3080 端口上未能退出，重启已停止。"))
+                return
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                self.waitForPortRelease(attempt: attempt + 1, launch: launch, completion: completion)
+            }
         }
     }
 
@@ -267,7 +289,7 @@ final class ServerManager {
         do {
             try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
             let logPath = Env.runtimeDir + "/server.log"
-            FileManager.default.createFile(atPath: logPath, contents: nil)
+            try Data().write(to: URL(fileURLWithPath: logPath), options: .atomic)
             logHandle = FileHandle(forWritingAtPath: logPath)
 
             var environment = Env.commandEnvironment(executable: dsh)
@@ -303,20 +325,18 @@ final class ServerManager {
             return
         }
         if attempt >= 40 {
-            completion(.failure("等待 dsh web 超时。\n\n" + serverLogTail()))
+            completion(.failure("等待 dsh web 启动 URL 超时。\n\n" + serverLogTail()))
             return
         }
         isListening { ready in
             if ready {
-                guard let url = self.serverURL() else {
-                    completion(.failure("服务已监听，但 server.log 没有输出带 token 的启动 URL。\n\n" + self.serverLogTail()))
+                if let url = self.serverURL() {
+                    completion(.ready(url))
                     return
                 }
-                completion(.ready(url))
-            } else {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
-                    self.poll(attempt: attempt + 1, completion: completion)
-                }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.poll(attempt: attempt + 1, completion: completion)
             }
         }
     }
@@ -405,7 +425,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appItem = NSMenuItem()
         mainMenu.addItem(appItem)
         let appMenu = NSMenu(title: "DSH")
-        appMenu.addItem(withTitle: "重启 DSH 服务", action: #selector(restartService(_:)), keyEquivalent: "r").target = self
+        appMenu.addItem(withTitle: "刷新页面", action: #selector(reloadPage(_:)), keyEquivalent: "r").target = self
+        appMenu.addItem(withTitle: "重启 DSH 服务", action: #selector(restartService(_:)), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         appMenu.addItem(withTitle: "退出 DSH", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         appItem.submenu = appMenu
@@ -455,6 +476,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     @objc private func restartService(_ sender: Any?) {
         showProgress(title: "正在重启 DeepSeek Harness", detail: "正在停止并重新启动 DSH.app 持有的服务…", logName: "server.log")
         ServerManager.shared.restart { [weak self] result in self?.handleStartup(result) }
+    }
+
+    @objc private func reloadPage(_ sender: Any?) {
+        webView.reload()
     }
 
     private func showProgress(title: String, detail: String, logName: String?) {
