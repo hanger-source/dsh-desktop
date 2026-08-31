@@ -225,6 +225,14 @@ class PluginRepository {
     try {
       let result
       if (Fs.existsSync(Path.join(this.repoPath, '.git'))) {
+        const existingRemote = await run('/usr/bin/git', ['-C', this.repoPath, 'remote', 'get-url', 'origin'], { timeoutMs: 10_000 })
+        const remoteArgs = existingRemote.exitCode === 0
+          ? ['-C', this.repoPath, 'remote', 'set-url', 'origin', this.remote]
+          : ['-C', this.repoPath, 'remote', 'add', 'origin', this.remote]
+        const configuredRemote = await run('/usr/bin/git', remoteArgs, { timeoutMs: 10_000 })
+        if (configuredRemote.exitCode !== 0) {
+          throw new Error((configuredRemote.stderr || configuredRemote.stdout || '无法配置插件仓库 remote').trim())
+        }
         result = await run('/usr/bin/git', ['-C', this.repoPath, 'pull', '--ff-only'], { timeoutMs: 120_000 })
       } else {
         if (Fs.existsSync(this.repoPath)) throw new Error('插件仓库路径已存在但不是 Git 仓库：' + this.repoPath)
