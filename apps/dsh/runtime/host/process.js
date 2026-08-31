@@ -41,7 +41,7 @@ function run(executable, args, options = {}) {
   })
 }
 
-function requestJson(url, redirects = 3) {
+function requestText(url, redirects = 3) {
   return new Promise((resolve, reject) => {
     const request = Https.get(url, {
       headers: {
@@ -66,16 +66,21 @@ function requestJson(url, redirects = 3) {
           reject(new Error('HTTP ' + response.statusCode + ': ' + body.slice(0, 300)))
           return
         }
-        try {
-          resolve(JSON.parse(body))
-        } catch (error) {
-          reject(new Error('JSON 解析失败：' + error.message))
-        }
+        resolve(body)
       })
     })
     request.on('timeout', () => request.destroy(new Error('请求超时')))
     request.on('error', reject)
   })
+}
+
+async function requestJson(url) {
+  const body = await requestText(url)
+  try {
+    return JSON.parse(body)
+  } catch (error) {
+    throw new Error('JSON 解析失败：' + error.message)
+  }
 }
 
 function readJsonBody(request) {
@@ -109,4 +114,4 @@ function sendJson(response, statusCode, value) {
   response.end(JSON.stringify(value))
 }
 
-module.exports = { readJsonBody, requestJson, run, sendJson }
+module.exports = { readJsonBody, requestJson, requestText, run, sendJson }

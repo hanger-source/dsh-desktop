@@ -128,6 +128,7 @@ class PluginRepository {
       if (this.disabled.has(source.key)) continue
       try {
         let plugin = this.findPlugin(source, plugins)
+        const previousPackageId = plugin ? plugin.currentPackageId : null
         let packageId = null
         if (plugin) {
           const current = this.currentPackage(runner, agent, plugin)
@@ -163,7 +164,7 @@ class PluginRepository {
           agentId: agent.id,
           pluginId: plugin.pluginId,
           packageId,
-          mode: plugin.activeRun ? 'update' : 'run',
+          mode: previousPackageId && previousPackageId !== packageId ? 'update' : 'run',
           hasClientHalf: Boolean(source.client),
         })
       } catch (error) {
@@ -179,12 +180,23 @@ class PluginRepository {
     const plugins = this.allPlugins(agent)
     const packages = this.sources().map(source => {
       const plugin = this.findPlugin(source, plugins)
+      const latest = plugin && plugin.latestRun
+      const failed = latest && latest.status === 'failed'
+      const error = failed && latest.error
+        ? {
+            phase: latest.error.phase || null,
+            message: latest.error.message || String(latest.error),
+          }
+        : null
       return {
         key: source.key,
         name: source.meta.name || source.key,
         purpose: source.meta.purpose || '',
         pluginId: plugin ? plugin.pluginId : null,
-        state: this.disabled.has(source.key) ? 'disabled' : (plugin && plugin.activeRun ? 'running' : (plugin ? 'stopped' : 'ready')),
+        state: this.disabled.has(source.key)
+          ? 'disabled'
+          : (plugin && plugin.activeRun ? 'running' : (failed ? 'failed' : (plugin ? 'stopped' : 'ready'))),
+        error,
       }
     })
     return {

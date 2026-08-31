@@ -1,7 +1,7 @@
 'use strict'
 
 const Path = require('node:path')
-const { requestJson, run } = require('./process.js')
+const { requestJson, requestText, run } = require('./process.js')
 
 function normalizeVersion(value) {
   const match = /\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?/.exec(String(value || ''))
@@ -63,16 +63,14 @@ class VersionService {
     let assetUrl = null
     let error = null
     try {
-      const releases = await requestJson('https://api.github.com/repos/' + this.repository + '/releases?per_page=30')
-      const release = Array.isArray(releases)
-        ? releases.find(item => !item.draft && !item.prerelease && /^dsh-app-v\d+\.\d+\.\d+/.test(item.tag_name || ''))
-        : null
-      if (release) {
-        latest = normalizeVersion(release.tag_name)
-        releaseUrl = release.html_url || releaseUrl
-        const assets = Array.isArray(release.assets) ? release.assets : []
-        const asset = assets.find(item => /\.dmg$/i.test(item.name || '')) || assets.find(item => /\.zip$/i.test(item.name || ''))
-        assetUrl = asset ? asset.browser_download_url : null
+      const feed = await requestText('https://github.com/' + this.repository + '/releases.atom')
+      const entries = feed.match(/<entry>[\s\S]*?<\/entry>/g) || []
+      const entry = entries.find(value => /Repository\/\d+\/dsh-app-v\d+\.\d+\.\d+<\/id>/.test(value))
+      const tag = entry && /Repository\/\d+\/(dsh-app-v\d+\.\d+\.\d+)<\/id>/.exec(entry)?.[1]
+      if (tag) {
+        latest = normalizeVersion(tag)
+        releaseUrl = 'https://github.com/' + this.repository + '/releases/tag/' + tag
+        assetUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/DSH.dmg'
       }
     } catch (caught) {
       error = caught.message

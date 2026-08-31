@@ -10,7 +10,8 @@ const moduleId = pathname.slice(prefix.length, -suffix.length)
 
 window.__ModuleLoader__.load({
   id: moduleId,
-  factory: () => {
+  factory: (require) => {
+    const React = require('react')
     const inject = ['slots', 'remote', 'remote.dynamicCordisRunner', 'dynamicCordisRunner']
     const h = React.createElement
     const nativeControl = () => window.webkit?.messageHandlers?.dshAppControl
@@ -104,9 +105,13 @@ window.__ModuleLoader__.load({
             agentId: target.agentId,
             pluginId: target.pluginId,
             packageId: target.packageId,
-            mode: current ? 'update' : target.mode,
+            mode: target.mode,
             hasClientHalf: target.hasClientHalf,
           })
+          const failure = ctx.dynamicCordisRunner.lastRunError?.getSnapshot?.().get(target.pluginId)
+          if (failure && failure.packageId === target.packageId) {
+            errors.push({ key: target.key, error: failure.message || failure.reason })
+          }
         } catch (error) {
           errors.push({ key: target.key, error: error.message || String(error) })
         }
@@ -156,9 +161,9 @@ window.__ModuleLoader__.load({
       const value = state.value
       const app = value.app
       const dsh = value.dsh
-      const status = (installed, latest, available, error) => h('div', { className: 'dsh-desktop-row' }, [
+      const status = (installed, latest, available, error, emptyLatest = '最新版本未知') => h('div', { className: 'dsh-desktop-row' }, [
         h('span', null, '当前 ' + (installed || '未知')),
-        h('span', { className: 'dsh-desktop-muted' }, '最新 ' + (latest || '未知')),
+        h('span', { className: 'dsh-desktop-muted' }, latest ? '最新 ' + latest : emptyLatest),
         available === true
           ? h('span', { className: 'dsh-desktop-warn' }, '有更新')
           : available === false
@@ -170,7 +175,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'dsh-desktop-root' }, [
         h('div', { className: 'dsh-desktop-card' }, [
           h('div', { className: 'dsh-desktop-title' }, 'DSH Desktop'),
-          status(app.installed, app.latest, app.updateAvailable, app.error),
+          status(app.installed, app.latest, app.updateAvailable, app.error, '尚无 dsh-app-v* 正式发布'),
           h('div', { className: 'dsh-desktop-row' }, [
             h('button', { className: 'dsh-desktop-btn', disabled: state.loading, onClick: () => load(true) }, state.loading ? '检查中…' : '检查更新'),
             app.updateAvailable
@@ -264,12 +269,18 @@ window.__ModuleLoader__.load({
         ...(view.packages || []).map(plugin => {
           const running = plugin.state === 'running'
           const disabled = plugin.state === 'disabled'
-          const stateText = running ? '运行中' : (disabled ? '已停用' : (plugin.state === 'ready' ? '待启用' : '正在装配'))
-          return h('div', { key: plugin.key, className: 'dsh-plugin-item' }, [
+          const failed = plugin.state === 'failed'
+          const stateText = running
+            ? (plugin.error ? '运行中（最近重载失败）' : '运行中')
+            : (disabled ? '已停用' : (failed ? '运行失败' : (plugin.state === 'ready' ? '待启用' : '未运行')))
+          return h('div', { key: plugin.key, className: 'dsh-plugin-item', style: { flexWrap: 'wrap' } }, [
             h('span', { className: 'dsh-plugin-name' }, plugin.name),
             h('span', { className: 'dsh-plugin-purpose' }, plugin.purpose),
             h('span', { className: 'dsh-desktop-badge' + (running ? ' dsh-desktop-badge-on' : '') }, stateText),
-            h('button', { className: 'dsh-desktop-btn', disabled: busy !== null, onClick: () => toggle(plugin) }, busy === plugin.key ? '处理中…' : (running ? '停用' : '启用')),
+            h('button', { className: 'dsh-desktop-btn', disabled: busy !== null, onClick: () => toggle(plugin) }, busy === plugin.key ? '处理中…' : (running ? '停用' : (failed ? '重试' : '启用'))),
+            plugin.error
+              ? h('div', { className: 'dsh-desktop-error dsh-desktop-mono', style: { flexBasis: '100%' } }, (plugin.error.phase ? plugin.error.phase + '：' : '') + plugin.error.message)
+              : null,
           ])
         }),
         message ? h('div', { className: message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-error' }, message.text) : null,
