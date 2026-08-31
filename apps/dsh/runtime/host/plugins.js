@@ -105,14 +105,20 @@ class PluginRepository {
     return null
   }
 
-  currentPackage(runner, agent, plugin) {
-    const packageId = plugin && (plugin.currentPackageId || (plugin.packages && plugin.packages.length > 0 && plugin.packages[plugin.packages.length - 1].packageId))
-    if (!packageId) return null
-    try {
-      return runner.inspectPackage(agent, plugin.pluginId, packageId)
-    } catch (_error) {
-      return null
+  matchingPackage(runner, agent, plugin, source, name, purpose) {
+    const packages = plugin && Array.isArray(plugin.packages) ? [...plugin.packages].reverse() : []
+    for (const candidate of packages) {
+      try {
+        const inspected = runner.inspectPackage(agent, plugin.pluginId, candidate.packageId)
+        const sameSource = inspected
+          && inspected.name === name
+          && inspected.purpose === purpose
+          && ((inspected.code && inspected.code.host) || '') === source.host
+          && ((inspected.code && inspected.code.client) || '') === source.client
+        if (sameSource) return inspected
+      } catch (_error) {}
     }
+    return null
   }
 
   async reconcile(keys = null) {
@@ -133,14 +139,9 @@ class PluginRepository {
         const previousPackageId = plugin ? plugin.currentPackageId : null
         let packageId = null
         if (plugin) {
-          const current = this.currentPackage(runner, agent, plugin)
-          const sameSource = current
-            && current.name === name
-            && current.purpose === purpose
-            && ((current.code && current.code.host) || '') === source.host
-            && ((current.code && current.code.client) || '') === source.client
-          if (sameSource) {
-            packageId = current.packageId
+          const matching = this.matchingPackage(runner, agent, plugin, source, name, purpose)
+          if (matching) {
+            packageId = matching.packageId
           } else {
             const defined = runner.define({
               name,
