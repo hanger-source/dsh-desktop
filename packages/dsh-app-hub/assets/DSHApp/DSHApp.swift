@@ -389,6 +389,50 @@ final class ServerManager {
     }
 }
 
+final class DSHWindow: NSWindow {
+    var dragRegionHeight: CGFloat = 0
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown,
+           dragRegionHeight > 0,
+           let contentView {
+            let point = contentView.convert(event.locationInWindow, from: nil)
+            if point.y >= contentView.bounds.maxY - dragRegionHeight {
+                appendDragLog("mouseDown x=\(Int(point.x)) y=\(Int(point.y)) clicks=\(event.clickCount)")
+                if event.clickCount == 2 {
+                    performZoom(nil)
+                } else {
+                    performDrag(with: event)
+                }
+                return
+            }
+        }
+        super.sendEvent(event)
+    }
+
+    private func appendDragLog(_ message: String) {
+        let path = Env.runtimeDir + "/titlebar.log"
+        let line = ISO8601DateFormatter().string(from: Date()) + " [DSHWindow] " + message + "\n"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(line.data(using: .utf8)!)
+            try? handle.close()
+        } else {
+            try? line.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
+}
+
+final class TitlebarDragView: NSView {
+    override var isOpaque: Bool { false }
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func resetCursorRects() {
+        discardCursorRects()
+        addCursorRect(bounds, cursor: .arrow)
+    }
+}
+
 final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
@@ -396,6 +440,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var progressStartedAt = Date()
     private var progressLogName: String?
     private var controlRMonitor: Any?
+    private var appliedPageTheme: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -464,24 +509,99 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     private func buildWindow() {
         let rect = NSRect(x: 0, y: 0, width: 1280, height: 820)
-        window = NSWindow(contentRect: rect, styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        window = DSHWindow(
+            contentRect: rect,
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
+            backing: .buffered,
+            defer: false
+        )
         window.title = "DeepSeek Harness"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.setFrameAutosaveName("DSHMainWindow")
+
+        let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
+        (window as? DSHWindow)?.dragRegionHeight = titlebarHeight
+        let titlebarCSSHeight = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), titlebarHeight)
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "dshAppearance")
         let themeScript = WKUserScript(
-            source: "(function(){var dark=function(){var b=document.body,h=document.documentElement;if(b&&b.hasAttribute('data-ds-dark-theme'))return true;if(h){var cs=getComputedStyle(h).colorScheme;if(cs==='dark')return true;if(cs==='light')return false}return window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches};var report=function(){var v=dark()?'dark':'light';if(window.webkit&&window.webkit.messageHandlers&&window.webkit.messageHandlers.dshAppearance){window.webkit.messageHandlers.dshAppearance.postMessage(v)}};var attach=function(){var b=document.body,h=document.documentElement;if(!b){setTimeout(attach,100);return}new MutationObserver(report).observe(b,{attributes:true,attributeFilter:['data-ds-dark-theme']});new MutationObserver(report).observe(h,{attributes:true,attributeFilter:['style']});if(window.matchMedia){window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',report)}report()};attach();})();",
+            source: """
+            (() => {
+              const style = document.createElement('style')
+              style.textContent = `
+                #root > .dsh-native-titlebar-frame {
+                  box-sizing: border-box;
+                  padding-top: \(titlebarCSSHeight)px;
+                }
+                #root > .dsh-native-titlebar-frame > :first-child {
+                  box-shadow: 0 -\(titlebarCSSHeight)px 0 var(--dsw-specific-sidebar-fill);
+                }
+              `
+
+              const markFrame = () => {
+                const frame = document.getElementById('root')?.firstElementChild
+                if (!frame) return false
+                frame.classList.add('dsh-native-titlebar-frame')
+                return true
+              }
+              const isDark = () => {
+                const body = document.body
+                const html = document.documentElement
+                if (body?.hasAttribute('data-ds-dark-theme') || html.hasAttribute('data-ds-dark-theme')) return true
+                const colorScheme = getComputedStyle(html).colorScheme
+                if (colorScheme === 'dark') return true
+                if (colorScheme === 'light') return false
+                return window.matchMedia?.('(prefers-color-scheme: dark)').matches === true
+              }
+              const report = () => {
+                window.webkit?.messageHandlers?.dshAppearance?.postMessage(isDark() ? 'dark' : 'light')
+              }
+              window.dshReportAppearance = report
+
+              const attach = () => {
+                if (!document.head || !document.body) {
+                  window.setTimeout(attach, 20)
+                  return
+                }
+                document.head.appendChild(style)
+                if (!markFrame()) {
+                  const frameObserver = new MutationObserver(() => {
+                    if (markFrame()) frameObserver.disconnect()
+                  })
+                  frameObserver.observe(document.body, { childList: true, subtree: true })
+                }
+                const themeObserver = new MutationObserver(report)
+                themeObserver.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme'] })
+                themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['data-ds-dark-theme', 'style'] })
+                window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', report)
+                report()
+              }
+              attach()
+            })()
+            """,
             injectionTime: .atDocumentStart,
             forMainFrameOnly: true
         )
         config.userContentController.addUserScript(themeScript)
-        webView = WKWebView(frame: rect, configuration: config)
+        let content = NSView(frame: rect)
+        content.autoresizingMask = [.width, .height]
+        webView = WKWebView(frame: content.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = self
-        window.contentView = webView
+        content.addSubview(webView)
+        let dragView = TitlebarDragView(frame: NSRect(
+            x: 0,
+            y: content.bounds.height - titlebarHeight,
+            width: content.bounds.width,
+            height: titlebarHeight
+        ))
+        dragView.autoresizingMask = [.width, .minYMargin]
+        dragView.setAccessibilityElement(false)
+        content.addSubview(dragView)
+        window.contentView = content
         window.center()
     }
 
@@ -571,33 +691,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        applyThemePreference()
+        webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == "dshAppearance" else { return }
-        applyThemePreference()
+        guard message.name == "dshAppearance",
+              let theme = message.body as? String,
+              theme == "dark" || theme == "light" else { return }
+        applyPageTheme(theme)
     }
 
-    private func applyThemePreference() {
-        switch readThemePreference() {
-        case "dark": window.appearance = NSAppearance(named: .darkAqua)
-        case "light": window.appearance = NSAppearance(named: .aqua)
-        default: window.appearance = nil
+    private func applyPageTheme(_ theme: String) {
+        guard appliedPageTheme != theme else { return }
+        appliedPageTheme = theme
+        window.appearance = NSAppearance(named: theme == "dark" ? .darkAqua : .aqua)
+        appendAppearanceLog("page=\(theme) window=\(window.appearance?.name.rawValue ?? "system")")
+    }
+
+    private func appendAppearanceLog(_ message: String) {
+        let path = Env.runtimeDir + "/appearance.log"
+        let line = ISO8601DateFormatter().string(from: Date()) + " [DSHApp] " + message + "\n"
+        if let handle = FileHandle(forWritingAtPath: path) {
+            handle.seekToEndOfFile()
+            handle.write(line.data(using: .utf8)!)
+            try? handle.close()
+        } else {
+            try? line.write(toFile: path, atomically: true, encoding: .utf8)
         }
-    }
-
-    private func readThemePreference() -> String {
-        let path = Env.dshHome + "/settings.yaml"
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8),
-              let range = text.range(of: "ui-theme:") else { return "system" }
-        let tail = String(text[range.upperBound...])
-        guard let line = tail.components(separatedBy: "\n").first(where: {
-            $0.trimmingCharacters(in: .whitespaces).hasPrefix("preference:")
-        }) else { return "system" }
-        let value = line.replacingOccurrences(of: "preference:", with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return value == "dark" || value == "light" ? value : "system"
     }
 
     func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
