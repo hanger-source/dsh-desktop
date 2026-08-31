@@ -4,7 +4,7 @@
 // Agent 重放时把整个文件内容原样作为 code.host 传入即可。
 // 运行效果：侧边栏底部显示当前模型 provider 的用量/余额（配额 /v1/usage、DeepSeek /user/balance）。
 return {
-  inject: ['subprocess', 'settings'],
+  inject: ['subprocess', 'settings', 'timer'],
   apply(ctx) {
     const creds = ctx.get('credentials')
     const settings = ctx.get('settings')
@@ -101,7 +101,7 @@ return {
 
     const cache = new Map()
     const inflight = new Map()
-    const freshFor = entry => entry.ok === false ? 10000 : 30000
+    const ageLimit = (entry, maximum) => entry.ok === false ? Math.min(10000, maximum) : maximum
 
     function refreshEntry(provider, source) {
       const key = source.meta.provider
@@ -114,7 +114,7 @@ return {
           ? await queryEntry(ref, source.fetch, source.meta)
           : Object.assign({}, source.meta, { ok: false, error: '当前模型未配置凭证引用' })
         const capturedAt = new Date().toISOString()
-        const record = { entry, capturedAt, expiresAt: Date.now() + freshFor(entry) }
+        const record = { entry, capturedAt, capturedAtMs: Date.now() }
         cache.set(key, record)
         return record
       })().finally(() => { inflight.delete(key) })
@@ -122,10 +122,10 @@ return {
       return operation
     }
 
-    async function entryFor(provider, source, allowStale) {
+    async function entryFor(provider, source, maximumAge, allowStale) {
       const key = source.meta.provider
       const held = cache.get(key)
-      if (held && Date.now() < held.expiresAt) return held
+      if (held && Date.now() - held.capturedAtMs < ageLimit(held.entry, maximumAge)) return held
       if (held && allowStale) {
         void refreshEntry(provider, source)
         return held
@@ -138,11 +138,24 @@ return {
       if (ns === 'llm-pi-ai' || ns === 'llm-deepseek') cache.clear()
     })
 
-    // 两个数据源各预热一次；所有会话共享缓存，并发切换复用同一个请求。
+    const sources = [
+      ['opencode-go', SOURCES['opencode-go']],
+      ['deepseek-official', SOURCES['deepseek-official']],
+    ]
+
+    // 两个数据源各预热一次；当前源由页面每 30 秒刷新，非当前源最多闲置 5 分钟。
     void Promise.allSettled([
-      entryFor('opencode-go', SOURCES['opencode-go']),
-      entryFor('deepseek-official', SOURCES['deepseek-official']),
+      refreshEntry('opencode-go', SOURCES['opencode-go']),
+      refreshEntry('deepseek-official', SOURCES['deepseek-official']),
     ])
+    ctx.interval(() => {
+      for (const [provider, source] of sources) {
+        const held = cache.get(source.meta.provider)
+        if (!held || Date.now() - held.capturedAtMs >= ageLimit(held.entry, 300000)) {
+          void refreshEntry(provider, source)
+        }
+      }
+    }, 300000)
 
     harness.handle('quota.snapshot', async (args) => {
       // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
@@ -154,7 +167,7 @@ return {
       const source = current && SOURCES[current.provider]
       let capturedAt = new Date().toISOString()
       if (source) {
-        const record = await entryFor(current.provider, source, args && args.allowStale === true)
+        const record = await entryFor(current.provider, source, 30000, args && args.allowStale === true)
         capturedAt = record.capturedAt
         entries.push(record.entry)
       }
