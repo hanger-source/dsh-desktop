@@ -85,11 +85,30 @@ async function enableOne(runner, agent, meta, hostSrc, clientSrc) {
   }
   let plugin = null
   for (const base of prefix) { if (byBase[base]) { plugin = byBase[base]; break } }
-  if (plugin && plugin.activeRun) return { ok: true, text: '已运行 ' + plugin.pluginId }
   if (plugin) {
     const target = plugin.currentPackageId || (plugin.packages && plugin.packages[plugin.packages.length - 1].packageId)
     if (target) {
       try {
+        const current = runner.inspectPackage(agent, plugin.pluginId, target)
+        const currentHost = (current.code && current.code.host) || ''
+        const currentClient = (current.code && current.code.client) || ''
+        if (currentHost !== hostSrc || currentClient !== clientSrc) {
+          const def = runner.define({
+            name: meta.name,
+            purpose: meta.purpose,
+            plugin: { kind: 'existing', pluginId: plugin.pluginId },
+            code: { host: hostSrc || undefined, client: clientSrc || undefined },
+            sessionId: agent.id,
+          })
+          const mode = current.currentPackageId ? 'update' : 'run'
+          const runRes = await runner.run(agent, plugin.pluginId, def.packageId, mode)
+          if (runRes && runRes.ok === false) {
+            const pending = /approv|pending/i.test(String(runRes.reason || runRes.message || ''))
+            return { ok: false, pending, text: runRes.message || runRes.reason || '更新失败' }
+          }
+          return { ok: true, text: '已更新 ' + plugin.pluginId }
+        }
+        if (plugin.activeRun) return { ok: true, text: '已运行 ' + plugin.pluginId }
         const runRes = await runner.run(agent, plugin.pluginId, target, 'run')
         if (runRes && runRes.ok === false) return { ok: false, text: runRes.message || runRes.reason || '重启失败' }
         return { ok: true, text: '已重启 ' + plugin.pluginId }

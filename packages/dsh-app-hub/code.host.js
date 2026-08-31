@@ -1,11 +1,6 @@
 // DSH App Hub — Host half (v3.1: launcher only — 点开图标能显示; no autostart, no PWA).
 return {
   apply(ctx) {
-    const HOME = process.env.HOME
-    if (!HOME) throw new Error('无法解析 HOME')
-    const DSH_HOME = process.env.DSH_HOME || HOME + '/.dsh'
-    const APP_DIR = HOME + '/Applications/DSH.app'
-    const ICON_SRC = DSH_HOME + '/hang-plugins/.runtime/dsh-app-hub'
     const PORT = 3080
     const URL = 'http://127.0.0.1:' + PORT + '/'
 
@@ -39,6 +34,28 @@ return {
       } catch (e) {
         return { exitCode: null, stdout: '', stderr: String((e && e.message) || e), sandbox: null }
       }
+    }
+
+    let pathsCache = null
+    async function resolvePaths() {
+      if (pathsCache !== null) return pathsCache
+      const script = 'printf "%s\\n%s\\n" "$HOME" "${DSH_HOME:-$HOME/.dsh}"'
+      const result = await runCmd('/bin/bash -lc ' + JSON.stringify(script), 8000, 4096)
+      if (result.exitCode !== 0) {
+        throw new Error('无法解析 DSH 路径：' + (result.stderr || result.stdout || 'shell failed'))
+      }
+      const lines = result.stdout.split('\n').map((line) => line.trim()).filter(Boolean)
+      const home = lines[0]
+      const dshHome = lines[1]
+      if (!home || !dshHome || !home.startsWith('/') || !dshHome.startsWith('/')) {
+        throw new Error('DSH 路径不是绝对路径')
+      }
+      pathsCache = {
+        appDir: home + '/Applications/DSH.app',
+        iconSrc: dshHome + '/hang-plugins/.runtime/dsh-app-hub',
+        buildScript: dshHome + '/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh',
+      }
+      return pathsCache
     }
 
     // ---------- version check & update ----------
@@ -150,31 +167,29 @@ return {
       return { ok: false, used, error: res.stderr || res.stdout || ('python exit ' + res.exitCode) }
     }
 
-    // ---------- launcher app content ----------
-    // 原生壳构建脚本（含 Swift 源码）放在仓库 ~/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/，可单独更新
-    const BUILD_SCRIPT_PATH = DSH_HOME + '/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh'
-
     // ---------- launcher actions ----------
     async function launcherStatus() {
+      const paths = await resolvePaths()
       const portUp = await runCmd('/usr/bin/curl -sS -o /dev/null --max-time 2 ' + URL + ' && echo up || echo down', 8000, 1024)
-      const appCheck = await runCmd('test -x ' + JSON.stringify(APP_DIR + '/Contents/MacOS/DSHApp') + ' && echo yes || echo no', 8000, 1024)
+      const appCheck = await runCmd('test -x ' + JSON.stringify(paths.appDir + '/Contents/MacOS/DSHApp') + ' && echo yes || echo no', 8000, 1024)
       return {
         appReady: (appCheck.stdout || '').trim() === 'yes',
         portUp: (portUp.stdout || '').trim() === 'up',
-        appDir: APP_DIR,
+        appDir: paths.appDir,
         port: PORT,
       }
     }
 
     async function createApp() {
       // 调用磁盘上的构建脚本（含 Swift 源码）生成 DSH.app
+      const paths = await resolvePaths()
       const steps = []
-      const exists = await runCmd('test -f ' + JSON.stringify(BUILD_SCRIPT_PATH) + ' && echo yes || echo no', 8000, 1024)
+      const exists = await runCmd('test -f ' + JSON.stringify(paths.buildScript) + ' && echo yes || echo no', 8000, 1024)
       if ((exists.stdout || '').trim() !== 'yes') {
-        steps.push({ step: 'build script', ok: false, detail: '缺失 ' + BUILD_SCRIPT_PATH + '（可从 dsh-app-hub 项目目录拷贝 dsh-app-build.sh）' })
+        steps.push({ step: 'build script', ok: false, detail: '缺失 ' + paths.buildScript })
         return { ok: false, steps, status: await launcherStatus() }
       }
-      const b = await runCmd('bash ' + JSON.stringify(BUILD_SCRIPT_PATH) + ' ' + JSON.stringify(APP_DIR) + ' ' + JSON.stringify(ICON_SRC), 120000, 8192)
+      const b = await runCmd('bash ' + JSON.stringify(paths.buildScript) + ' ' + JSON.stringify(paths.appDir) + ' ' + JSON.stringify(paths.iconSrc), 120000, 8192)
       steps.push({ step: 'swift build', ok: b.exitCode === 0, detail: b.stderr || b.stdout, sandbox: b.sandbox || null })
       const st = await launcherStatus()
       return { ok: b.exitCode === 0, steps, status: st }
@@ -182,7 +197,8 @@ return {
 
     async function launchApp() {
       // 启动壳：壳自己负责准备正式运行时、持有 server 并打开窗口
-      const res = await runCmd('/usr/bin/open ' + JSON.stringify(APP_DIR), 20000, 2048)
+      const paths = await resolvePaths()
+      const res = await runCmd('/usr/bin/open ' + JSON.stringify(paths.appDir), 20000, 2048)
       const st = await launcherStatus()
       return { ok: res.exitCode === 0, detail: res.stderr || res.stdout, status: st }
     }

@@ -4,9 +4,10 @@
 // Agent 重放时把整个文件内容原样作为 code.host 传入即可。
 // 运行效果：侧边栏底部显示当前模型 provider 的用量/余额（配额 /v1/usage、DeepSeek /user/balance）。
 return {
-  inject: ['subprocess'],
+  inject: ['subprocess', 'settings'],
   apply(ctx) {
     const creds = ctx.get('credentials')
+    const settings = ctx.get('settings')
 
     async function httpGetJson(url, key) {
       const curl = await ctx.subprocess.resolveExecutable('curl')
@@ -72,9 +73,19 @@ return {
 
     // key = 模型 provider 名（agentDefaultModel.currentSelection().provider），别名覆盖实际命名差异
     const SOURCES = {
-      'opencode-go': { ref: 'OPENCODE_API_KEY', fetch: fetchOpencodeGo, meta: { provider: 'opencode-go', kind: 'subscription', displayName: 'OpenCode Go' } },
-      'deepseek': { ref: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
-      'deepseek-official': { ref: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+      'opencode-go': { settingsNs: 'llm-pi-ai', fetch: fetchOpencodeGo, meta: { provider: 'opencode-go', kind: 'subscription', displayName: 'OpenCode Go' } },
+      'deepseek': { settingsNs: 'llm-deepseek', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+      'deepseek-official': { settingsNs: 'llm-deepseek', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+    }
+
+    function credentialRef(provider, source) {
+      if (!settings) return null
+      const section = settings.get(source.settingsNs)
+      const profile = source.settingsNs === 'llm-pi-ai'
+        ? section && section.providers && section.providers[provider]
+        : section
+      const ref = profile && profile.apiKeyEnv
+      return typeof ref === 'string' && ref.length > 0 ? ref : null
     }
 
     const queryEntry = async (ref, fetcher, meta) => {
@@ -103,7 +114,9 @@ return {
       const entries = []
       const source = current && SOURCES[current.provider]
       if (source) {
-        entries.push(await queryEntry(source.ref, source.fetch, source.meta))
+        const ref = credentialRef(current.provider, source)
+        if (!ref) entries.push(Object.assign({}, source.meta, { ok: false, error: '当前模型未配置凭证引用' }))
+        else entries.push(await queryEntry(ref, source.fetch, source.meta))
       }
       return { capturedAt: new Date().toISOString(), current, entries }
     })
