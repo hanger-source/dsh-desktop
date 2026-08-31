@@ -72,6 +72,18 @@ return {
         setQr(null)
         setLoginMsg(null)
         try {
+          // 空 dsh 自举：先确保 headless 依赖（dsh-weixin-gateway）就位
+          const env = await host.call('wx.ensureEnv', {}).catch(() => null)
+          if (env && env.ok === false) {
+            setLoginMsg({ kind: 'error', text: env.message || '环境准备失败' })
+            if (env.steps && env.steps.length) {
+              setLoginMsg({ kind: 'error', text: env.message + '\n' + env.steps.map((s) => '· ' + s.name + ' ' + (s.message || s.output || '')).join('\n') })
+            }
+            return
+          }
+          if (env && env.steps && env.steps.length) {
+            setLoginMsg({ kind: 'warn', text: '环境已自动准备：' + env.steps.map((s) => s.name).join(', ') })
+          }
           const r = await host.call('wx.login', {})
           if (r && r.error) { setLoginMsg({ kind: 'error', text: r.error }); return }
           if (r && r.qrcodePng) {

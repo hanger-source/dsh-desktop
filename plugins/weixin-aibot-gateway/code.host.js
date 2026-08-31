@@ -89,6 +89,45 @@ return {
       }
     }
 
+    // ================= 自举：空 dsh 也能跑（首次扫码前检查/安装 headless 依赖） =================
+    const HEADLESS_LOCAL_DEPS = ['weixin-custom-tools'] // link 包：随 dsh-desktop 仓库同步
+    const HEADLESS_NPM_DEPS = ['dsh-weixin-gateway']    // npm 包：dsh plugin add 自动装
+
+    async function headlessDeps() {
+      try {
+        const target = await ctx.fs.resolve('/Users/fuhangbo/.dsh/profiles/headless/package.json')
+        return JSON.parse(await ctx.fs.readText(target))
+      } catch { return null }
+    }
+
+    async function ensureEnv() {
+      const out = { ok: true, steps: [] }
+      // 1. dsh 本体
+      const dshCheck = await run(['/bin/sh', '-c', 'command -v dsh || echo NO_DSH'], { graceMs: 8000, maxBytes: 65536 })
+      if (dshCheck.stdout.trim() === 'NO_DSH') {
+        return { ok: false, message: '未找到 dsh，请先安装 DeepSeek Harness（依赖它运行微信网关）' }
+      }
+      // 2. headless profile
+      const profileCheck = await run(['/bin/sh', '-c', 'test -f /Users/fuhangbo/.dsh/profiles/headless/package.json && echo OK || echo NO'], { graceMs: 8000, maxBytes: 65536 })
+      if (profileCheck.stdout.trim() !== 'OK') {
+        return { ok: false, message: 'headless profile 不存在，请先创建（dsh-weixin 需要）' }
+      }
+      // 3. npm 依赖自举（dsh-weixin-gateway）—— 官方 dsh plugin add，自动写 profile
+      const deps = await headlessDeps()
+      const missingNpm = HEADLESS_NPM_DEPS.filter((n) => !(deps && deps[n]))
+      for (const name of missingNpm) {
+        const r = await run(['/bin/sh', '-c', 'dsh plugin --profile headless add ' + name + ' 2>&1'], { graceMs: 180000, maxBytes: 65536 })
+        out.steps.push({ name, action: 'npm-add', exitCode: r.exitCode, output: r.stdout.trim().slice(-140) })
+        if (r.exitCode !== 0) out.ok = false
+      }
+      // 4. link 依赖（weixin-custom-tools）—— 随 dsh-desktop 仓库同步，检查存在性
+      const missingLocal = HEADLESS_LOCAL_DEPS.filter((n) => !(deps && deps[n]))
+      for (const name of missingLocal) {
+        out.steps.push({ name, action: 'repo-sync', message: '该包随 dsh-desktop 仓库同步，请在 App「Hang 的插件」页确认已同步' })
+      }
+      return out
+    }
+
     // ================= 扫码登录编排 =================
     async function execQrScript(args) {
       const r = await run(['/usr/bin/env', 'node', '--input-type=module', '-e', QR_LOGIN_SCRIPT, ...args], { graceMs: 60000, maxBytes: 1048576 })
@@ -151,6 +190,9 @@ return {
     }
 
     // ================= RPC handlers =================
+    harness.handle('wx.ensureEnv', async () => {
+      try { return await ensureEnv() } catch (err) { return { error: String(err) } }
+    })
     harness.handle('wx.status', async () => {
       try { return await gatewayStatus() } catch (err) { return { error: String(err) } }
     })
@@ -174,6 +216,6 @@ return {
       } catch (err) { return { error: String(err) } }
     })
 
-    console.log('[weixin-aibot-gateway] Host 就绪（扫码/状态/驻守 RPC）')
+    console.log('[weixin-aibot-gateway] Host 就绪（自举/扫码/状态/驻守 RPC）')
   },
 }
