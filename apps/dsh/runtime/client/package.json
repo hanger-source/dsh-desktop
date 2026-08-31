@@ -1,6 +1,6 @@
 {
-  "name": "@hanger/dsh-client-bootstrap",
-  "version": "1.0.0",
+  "name": "@hanger/dsh-desktop-runtime",
+  "version": "0.0.0",
   "type": "module",
   "main": "./index.js",
   "exports": {

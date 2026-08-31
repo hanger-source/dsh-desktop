@@ -38,4 +38,4 @@
 ```
 
 ## 参考实现
-`packages/dsh-app-hub/code.client.js` 的 `styles.insert` 段 + AppSection（卡片/浮条/徽章全量示例）。
+`apps/dsh/runtime/client/client.js` 的设置卡片、胶囊按钮、状态徽章与主题变量用法。

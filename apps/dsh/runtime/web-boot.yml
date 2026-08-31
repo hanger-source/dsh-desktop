@@ -1,0 +1,12 @@
+# DSH.app 自带的静态运行时。App 设置与插件管理不进入动态插件 registry；
+# `plugins/` 下真正的 Hang 插件才由动态 Cordis runner 装配。
+- id: web-runtime
+  config:
+    openBrowser: false
+
+- insert:
+    - id: dsh-desktop-host
+      name: __DSH_DESKTOP_HOST__
+
+    - id: dsh-desktop-client
+      name: '@hanger/dsh-desktop-runtime'

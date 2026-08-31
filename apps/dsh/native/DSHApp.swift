@@ -30,7 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                     self.startupPage.showStatus(title: "DeepSeek Harness 准备失败", detail: error.localizedDescription, isError: true)
                 case .success(let launch):
                     self.startupPage.showProgress(title: "正在启动 DeepSeek Harness", detail: "正式 dsh 已就绪，正在启动 web 服务…", logName: "server.log")
-                    ServerManager.shared.start(dsh: launch.dsh, overlay: launch.overlay) { result in
+                    ServerManager.shared.start(launch: launch) { result in
                         self.handleStartup(result)
                     }
                 }
@@ -56,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appMenu = NSMenu(title: "DSH")
         appMenu.addItem(withTitle: "关于 DSH", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "").target = NSApp
         appMenu.addItem(.separator())
+        appMenu.addItem(withTitle: "检查更新…", action: #selector(openReleases(_:)), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "重启 APP", action: #selector(restartApplication(_:)), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         let servicesItem = NSMenuItem(title: "服务", action: nil, keyEquivalent: "")
@@ -254,14 +255,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         webView.reload()
     }
 
+    @objc private func openReleases(_ sender: Any?) {
+        NSWorkspace.shared.open(URL(string: "https://github.com/hanger-source/dsh-plugins/releases")!)
+    }
+
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        if message.name == "dshAppControl", message.body as? String == "restart" {
-            restartApplication(nil)
-            return
+        if message.name == "dshAppControl" {
+            if message.body as? String == "restart" {
+                restartApplication(nil)
+                return
+            }
+            if let command = message.body as? [String: Any],
+               command["action"] as? String == "openExternal",
+               let value = command["url"] as? String,
+               let url = URL(string: value),
+               url.scheme == "https" {
+                NSWorkspace.shared.open(url)
+                return
+            }
         }
         guard message.name == "dshAppearance",
               let theme = message.body as? String,

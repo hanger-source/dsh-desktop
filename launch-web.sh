@@ -1,31 +1,39 @@
 #!/usr/bin/env bash
-# 手动启动 dsh web（同 App 启动参数：--patch web-boot.yml）。
-# web-boot.yml 提供：openBrowser:false + Host 定义与静态 Client 自动挂载。
+# 开发诊断入口：使用已安装 DSH.app 自带的 runtime 启动同一条 web 链。
 set -euo pipefail
-dsh_home="${DSH_HOME:-$HOME/.dsh}"
-repo="$dsh_home/hang-plugins"
-template="$repo/overlays/web/web-boot.yml"
-plugin="$repo/overlays/web/plugins/dsh-boot.js"
-client_bootstrap="$repo/overlays/web/plugins/dsh-client-bootstrap"
-runtime="$repo/.runtime/dsh-app-hub"
-overlay="$runtime/web-boot.generated.yml"
 
-command -v dsh >/dev/null 2>&1 || { echo "找不到正式安装的 dsh" >&2; exit 1; }
-[ -f "$template" ] || { echo "缺少 overlay 模板: $template" >&2; exit 1; }
-[ -f "$plugin" ] || { echo "缺少 dsh-boot: $plugin" >&2; exit 1; }
-[ -f "$client_bootstrap/package.json" ] || { echo "缺少 dsh-client-bootstrap: $client_bootstrap" >&2; exit 1; }
-module_link="$dsh_home/profiles/web/node_modules/@hanger/dsh-client-bootstrap"
-mkdir -p "$(dirname "$module_link")"
-if [ -L "$module_link" ]; then
-  [ "$(readlink "$module_link")" = "$client_bootstrap" ] || { echo "dsh-client-bootstrap 模块入口指向了其他路径: $module_link" >&2; exit 1; }
-elif [ -e "$module_link" ]; then
-  echo "dsh-client-bootstrap 模块入口已被非符号链接占用: $module_link" >&2
+dsh_home="${DSH_HOME:-$HOME/.dsh}"
+app="${DSH_APP_PATH:-$HOME/Applications/DSH.app}"
+runtime="$app/Contents/Resources/runtime"
+state="$dsh_home/runtime/dsh-desktop"
+overlay="$state/web-boot.generated.yml"
+module="$dsh_home/profiles/web/node_modules/@hanger/dsh-desktop-runtime"
+
+command -v dsh >/dev/null 2>&1 || { echo "找不到 dsh" >&2; exit 1; }
+[ -f "$runtime/host/index.js" ] || { echo "App 缺少 Host runtime：$runtime" >&2; exit 1; }
+[ -f "$runtime/client/package.json" ] || { echo "App 缺少 Client runtime：$runtime" >&2; exit 1; }
+
+mkdir -p "$state" "$(dirname "$module")"
+if [ -L "$module" ]; then
+  [ "$(readlink "$module")" = "$runtime/client" ] || { echo "Client runtime 链接指向其他路径：$module" >&2; exit 1; }
+elif [ -e "$module" ]; then
+  echo "Client runtime 入口被非符号链接占用：$module" >&2
   exit 1
 else
-  ln -s "$client_bootstrap" "$module_link"
+  ln -s "$runtime/client" "$module"
 fi
-mkdir -p "$runtime"
-sed "s|__DSH_BOOT_PLUGIN__|$plugin|g" "$template" > "$overlay"
+
+sed "s|__DSH_DESKTOP_HOST__|$runtime/host/index.js|g" "$runtime/web-boot.yml" > "$overlay"
 export DSH_HOME="$dsh_home"
-export DSH_PLUGIN_REPO="$repo"
+export DSH_DESKTOP_REPO="$dsh_home/dsh-desktop"
+export DSH_DESKTOP_RUNTIME="$state"
+export DSH_DESKTOP_REMOTE="https://github.com/hanger-source/dsh-plugins.git"
+export DSH_DESKTOP_GITHUB="hanger-source/dsh-plugins"
+export DSH_APP_BUNDLE_PATH="$app"
+app_version="$(defaults read "$app/Contents/Info" CFBundleShortVersionString)"
+dsh_executable="$(command -v dsh)"
+npm_executable="$(command -v npm || true)"
+export DSH_APP_VERSION="$app_version"
+export DSH_EXECUTABLE="$dsh_executable"
+export DSH_NPM_EXECUTABLE="$npm_executable"
 exec dsh --profile web --patch "$overlay" --no-open "$@"

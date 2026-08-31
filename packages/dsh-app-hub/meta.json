@@ -1,1 +1,0 @@
-{ "name": "DSH App Hub", "purpose": "DSH.app 原生壳管理 + 左下角更新条（版本检查/一键更新/重启服务，状态行与壳服务能力）", "idPrefix": "apph", "matchPrefix": ["apph", "hub"] }

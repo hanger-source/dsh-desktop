@@ -1,1 +1,0 @@
-{ "name": "hang-plugins 管理器", "purpose": "设置页「Hang 的插件」：同步仓库、启停与状态管理", "idPrefix": "hang", "matchPrefix": ["pstore", "hang"], "self": true }

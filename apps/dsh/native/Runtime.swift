@@ -8,10 +8,10 @@ enum Env {
     static var dshHome: String {
         ProcessInfo.processInfo.environment["DSH_HOME"] ?? home + "/.dsh"
     }
-    static var pluginRepo: String { dshHome + "/hang-plugins" }
-    static var runtimeDir: String { pluginRepo + "/.runtime/dsh-app-hub" }
+    static var desktopRepo: String { dshHome + "/dsh-desktop" }
+    static var runtimeDir: String { dshHome + "/runtime/dsh-desktop" }
 
-    static func commandEnvironment(executable: String) -> [String: String] {
+    static func commandEnvironment(executable: String, additionalExecutables: [String] = []) -> [String: String] {
         var environment = ProcessInfo.processInfo.environment
         var directories = [
             URL(fileURLWithPath: executable).deletingLastPathComponent().path,
@@ -22,6 +22,9 @@ enum Env {
             "/usr/sbin",
             "/sbin",
         ]
+        directories.append(contentsOf: additionalExecutables.map {
+            URL(fileURLWithPath: $0).deletingLastPathComponent().path
+        })
         if let inherited = environment["PATH"] {
             directories.append(contentsOf: inherited.split(separator: ":").map(String.init))
         }
@@ -29,6 +32,13 @@ enum Env {
         environment["PATH"] = directories.filter { seen.insert($0).inserted }.joined(separator: ":")
         return environment
     }
+}
+
+struct RuntimeLaunch {
+    let dsh: String
+    let node: String
+    let npm: String?
+    let overlay: String
 }
 
 enum StepResult {
@@ -46,45 +56,51 @@ final class RuntimeInstaller {
 
     func prepare(
         status: @escaping (String, String, String?) -> Void,
-        completion: @escaping (Result<(dsh: String, overlay: String), Error>) -> Void
+        completion: @escaping (Result<RuntimeLaunch, Error>) -> Void
     ) {
         ensureDsh(status: status) { result in
             switch result {
             case .failure(let error):
                 completion(.failure(error))
-            case .success(let dsh):
-                status("正在同步 DSH 插件", "正在更新插件仓库和技能…", "bootstrap.log")
-                self.runBootstrap { bootstrap in
-                    switch bootstrap {
-                    case .failure(let error):
-                        completion(.failure(self.messageError(error)))
-                    case .success:
-                        do {
-                            let overlay = try self.generateOverlay()
-                            completion(.success((dsh: dsh, overlay: overlay)))
-                        } catch {
-                            completion(.failure(error))
-                        }
-                    }
+            case .success(let tools):
+                status("正在准备 DSH Desktop", "正在装配 App 自带运行时…", nil)
+                do {
+                    let overlay = try self.generateOverlay()
+                    completion(.success(RuntimeLaunch(
+                        dsh: tools.dsh,
+                        node: tools.node,
+                        npm: tools.npm,
+                        overlay: overlay
+                    )))
+                } catch {
+                    completion(.failure(error))
                 }
             }
         }
     }
 
+    private struct Tools {
+        let dsh: String
+        let node: String
+        let npm: String?
+    }
+
     private func ensureDsh(
         status: @escaping (String, String, String?) -> Void,
-        completion: @escaping (Result<String, Error>) -> Void
+        completion: @escaping (Result<Tools, Error>) -> Void
     ) {
-        if let dsh = findExecutable(dshCandidates()) {
-            completion(.success(dsh))
+        let node = findExecutable(nodeCandidates())
+        let npm = findExecutable(npmCandidates())
+        if let dsh = findExecutable(dshCandidates()), let node {
+            completion(.success(Tools(dsh: dsh, node: node, npm: npm)))
             return
         }
-        guard let npm = findExecutable([
-            "/opt/homebrew/bin/npm",
-            "/usr/local/bin/npm",
-            Env.home + "/.local/share/fnm/aliases/default/bin/npm",
-        ]) else {
-            completion(.failure(messageError("找不到 npm，无法安装正式发布的 @deepseek-ai/dsh。")))
+        guard let node else {
+            completion(.failure(messageError("找不到 Node.js。DSH.app 需要 Node.js 才能运行 @deepseek-ai/dsh。")))
+            return
+        }
+        guard let npm else {
+            completion(.failure(messageError("找不到与 Node.js 配套的 npm，无法安装 @deepseek-ai/dsh。")))
             return
         }
 
@@ -92,7 +108,7 @@ final class RuntimeInstaller {
         runCommand(
             executable: npm,
             arguments: ["install", "-g", "@deepseek-ai/dsh@latest", "--registry=https://registry.npmjs.org", "--loglevel=info"],
-            environment: Env.commandEnvironment(executable: npm),
+            environment: Env.commandEnvironment(executable: npm, additionalExecutables: [node]),
             logName: "install.log",
             timeout: 300
         ) { result in
@@ -105,62 +121,43 @@ final class RuntimeInstaller {
                 completion(.failure(self.messageError("npm 安装成功，但全局 bin 目录中没有 dsh。\n\n" + self.logTail("install.log"))))
                 return
             }
-            completion(.success(dsh))
-        }
-    }
-
-    private func runBootstrap(completion: @escaping (StepResult) -> Void) {
-        guard let script = Bundle.main.resourceURL?.appendingPathComponent("bootstrap.sh"),
-              FileManager.default.isReadableFile(atPath: script.path) else {
-            completion(.failure("DSH.app 缺少内置 bootstrap.sh。"))
-            return
-        }
-        var environment = ProcessInfo.processInfo.environment
-        environment["DSH_HOME"] = Env.dshHome
-        environment["DSH_BOOT_NO_SHELL"] = "1"
-        runCommand(
-            executable: "/bin/bash",
-            arguments: [script.path],
-            environment: environment,
-            logName: "bootstrap.log",
-            timeout: 120
-        ) { result in
-            if case .failure(let reason) = result {
-                completion(.failure("插件同步失败：\(reason)\n\n" + self.logTail("bootstrap.log")))
-                return
-            }
-            completion(.success)
+            completion(.success(Tools(dsh: dsh, node: node, npm: npm)))
         }
     }
 
     private func generateOverlay() throws -> String {
-        let templatePath = Env.pluginRepo + "/overlays/web/web-boot.yml"
-        let pluginPath = Env.pluginRepo + "/overlays/web/plugins/dsh-boot.js"
-        let clientBootstrapPath = Env.pluginRepo + "/overlays/web/plugins/dsh-client-bootstrap"
-        guard FileManager.default.isReadableFile(atPath: pluginPath) else {
-            throw messageError("插件仓库缺少 dsh-boot：\n\(pluginPath)")
+        guard let resources = Bundle.main.resourceURL else {
+            throw messageError("DSH.app 缺少 Resources 目录。")
         }
-        guard FileManager.default.isReadableFile(atPath: clientBootstrapPath + "/package.json") else {
-            throw messageError("插件仓库缺少 dsh-client-bootstrap：\n\(clientBootstrapPath)")
+        let runtime = resources.appendingPathComponent("runtime")
+        let templatePath = runtime.appendingPathComponent("web-boot.yml").path
+        let hostPath = runtime.appendingPathComponent("host/index.js").path
+        let clientPath = runtime.appendingPathComponent("client").path
+        guard FileManager.default.isReadableFile(atPath: hostPath) else {
+            throw messageError("DSH.app 缺少内置 Host runtime：\n\(hostPath)")
         }
-        let modulePath = Env.dshHome + "/profiles/web/node_modules/@hanger/dsh-client-bootstrap"
+        guard FileManager.default.isReadableFile(atPath: clientPath + "/package.json") else {
+            throw messageError("DSH.app 缺少内置 Client runtime：\n\(clientPath)")
+        }
+        let modulePath = Env.dshHome + "/profiles/web/node_modules/@hanger/dsh-desktop-runtime"
         let moduleParent = (modulePath as NSString).deletingLastPathComponent
         try FileManager.default.createDirectory(atPath: moduleParent, withIntermediateDirectories: true)
         if FileManager.default.fileExists(atPath: modulePath) {
             let resolved = URL(fileURLWithPath: modulePath).resolvingSymlinksInPath().path
-            guard resolved == clientBootstrapPath else {
-                throw messageError("dsh-client-bootstrap 模块入口指向了其他路径：\n\(modulePath)\n→ \(resolved)")
+            if resolved != clientPath {
+                try FileManager.default.removeItem(atPath: modulePath)
+                try FileManager.default.createSymbolicLink(atPath: modulePath, withDestinationPath: clientPath)
             }
         } else {
-            try FileManager.default.createSymbolicLink(atPath: modulePath, withDestinationPath: clientBootstrapPath)
+            try FileManager.default.createSymbolicLink(atPath: modulePath, withDestinationPath: clientPath)
         }
         let template = try String(contentsOfFile: templatePath, encoding: .utf8)
-        guard template.contains("__DSH_BOOT_PLUGIN__") else {
-            throw messageError("overlay 模板缺少 __DSH_BOOT_PLUGIN__ 占位符：\n\(templatePath)")
+        guard template.contains("__DSH_DESKTOP_HOST__") else {
+            throw messageError("overlay 模板缺少 __DSH_DESKTOP_HOST__ 占位符：\n\(templatePath)")
         }
         try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
         let output = Env.runtimeDir + "/web-boot.generated.yml"
-        let content = template.replacingOccurrences(of: "__DSH_BOOT_PLUGIN__", with: pluginPath)
+        let content = template.replacingOccurrences(of: "__DSH_DESKTOP_HOST__", with: hostPath)
         try content.write(toFile: output, atomically: true, encoding: .utf8)
         return output
     }
@@ -218,11 +215,28 @@ final class RuntimeInstaller {
             "/opt/homebrew/bin/dsh",
             "/usr/local/bin/dsh",
             Env.home + "/.local/bin/dsh",
+            Env.home + "/.local/share/fnm/aliases/default/bin/dsh",
         ]
         if let npm {
             candidates.insert(URL(fileURLWithPath: npm).deletingLastPathComponent().appendingPathComponent("dsh").path, at: 0)
         }
         return candidates
+    }
+
+    private func nodeCandidates() -> [String] {
+        [
+            "/opt/homebrew/bin/node",
+            "/usr/local/bin/node",
+            Env.home + "/.local/share/fnm/aliases/default/bin/node",
+        ]
+    }
+
+    private func npmCandidates() -> [String] {
+        [
+            "/opt/homebrew/bin/npm",
+            "/usr/local/bin/npm",
+            Env.home + "/.local/share/fnm/aliases/default/bin/npm",
+        ]
     }
 
     private func logTail(_ name: String) -> String {
@@ -253,31 +267,39 @@ final class ServerManager {
         }.resume()
     }
 
-    func start(dsh: String, overlay: String, completion: @escaping (StartupResult) -> Void) {
+    func start(launch: RuntimeLaunch, completion: @escaping (StartupResult) -> Void) {
         isListening { occupied in
             if occupied {
                 completion(.failure("端口 3080 已被现有服务占用。请先关闭该服务，再由 DSH.app 启动并持有它。"))
                 return
             }
-            self.launchServer(dsh: dsh, overlay: overlay, completion: completion)
+            self.launchServer(launch: launch, completion: completion)
         }
     }
 
-    private func launchServer(dsh: String, overlay: String, completion: @escaping (StartupResult) -> Void) {
+    private func launchServer(launch: RuntimeLaunch, completion: @escaping (StartupResult) -> Void) {
         do {
             try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
             let logPath = Env.runtimeDir + "/server.log"
             try Data().write(to: URL(fileURLWithPath: logPath), options: .atomic)
             logHandle = FileHandle(forWritingAtPath: logPath)
 
-            var environment = Env.commandEnvironment(executable: dsh)
+            let executables = [launch.node] + (launch.npm.map { [$0] } ?? [])
+            var environment = Env.commandEnvironment(executable: launch.dsh, additionalExecutables: executables)
             environment["DSH_HOME"] = Env.dshHome
-            environment["DSH_PLUGIN_REPO"] = Env.pluginRepo
             environment["DSH_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
+            environment["DSH_DESKTOP_REPO"] = Env.desktopRepo
+            environment["DSH_DESKTOP_RUNTIME"] = Env.runtimeDir
+            environment["DSH_DESKTOP_REMOTE"] = "https://github.com/hanger-source/dsh-plugins.git"
+            environment["DSH_DESKTOP_GITHUB"] = "hanger-source/dsh-plugins"
+            environment["DSH_APP_VERSION"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+            environment["DSH_APP_BUNDLE_PATH"] = Bundle.main.bundlePath
+            environment["DSH_EXECUTABLE"] = launch.dsh
+            if let npm = launch.npm { environment["DSH_NPM_EXECUTABLE"] = npm }
 
             let child = Process()
-            child.executableURL = URL(fileURLWithPath: dsh)
-            child.arguments = ["--profile", "web", "--patch", overlay, "--no-open"]
+            child.executableURL = URL(fileURLWithPath: launch.dsh)
+            child.arguments = ["--profile", "web", "--patch", launch.overlay, "--no-open"]
             child.environment = environment
             child.standardOutput = logHandle
             child.standardError = logHandle

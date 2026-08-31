@@ -1,69 +1,98 @@
-# dsh-plugins — Hang 的插件与 DSH.app 启动链路
+# DSH Desktop
 
-本仓库统一管理 Hang 的插件（每个包存一份**最新源码**，更新就地覆盖，历史交给 git），
-以及 DSH.app 原生壳的完整启动链路（App 拉起服务 → bootstrap → 插件自动启用 → 退出关闭）。
+DSH Desktop 是 DeepSeek Harness 的 macOS 桌面产品仓库。它同时保存 App 源码与随 App 发布的静态运行时、Hang 的插件源码和技能；但三类更新各自拥有独立版本与生效边界，不再互相伪装成同一种“插件更新”。
 
-## 链路总览（打开 DSH.app 之后发生的事）
+## 三个更新域
 
-1. **DSH.app（Swift 壳）** 先显示带动态进度条、持续计时和实时日志的安装面板，再检查本机是否装了正式发布的全局 `dsh`；没有则从 npmjs 正式 registry 执行 `npm install -g @deepseek-ai/dsh@latest`。安装失败直接显示 `install.log` 的错误，不打开空白 WKWebView，也不受本机滞后镜像配置影响。
-2. App 等待内置 `bootstrap.sh` 完成：clone/pull 本仓库到 `~/.dsh/hang-plugins`、同步技能；失败直接显示 `bootstrap.log`，不继续启动旧副本。
-3. App 根据当前 `DSH_HOME` 生成含 dsh-boot 绝对路径的运行时 overlay，再以正式全局 `dsh --profile web --patch <generated-overlay> --no-open` 拉起服务。模板 `web-boot.yml`：
-   - `openBrowser: false`（`--no-open` 在 `--profile` 模式下会被 dsh CLI 忽略，必须从配置层关，否则每次启动弹浏览器）；
-   - `insert:` 注入 **dsh-boot** 宿主引导插件。
-4. **dsh-boot 插件** 监听 `agent/created`，自动把 `packages/` 下带 UI 的插件 define + run 启用（幂等：每个包进程内只启用一次，多次 agent/created 不重复定义）：
-   - `dsh-app-hub`（设置 → App 页 + 左下角更新条）
-   - `hang-plugins`（设置 → Hang 的插件管理器）
-   - `quota-monitor`（侧边栏底部用量/余额）
-5. dsh 输出带 token 的启动 URL 后，App 才把 WKWebView 导向真实页面。**⌘Q 退出**只 `SIGTERM` App 自己持有的 dsh 子进程；若 3080 已被外部进程占用，App 明确报错，不接管也不杀掉它。dsh-boot 同时监控 `DSH_PARENT_PID`，App 被强杀后服务也会退出。
+| 更新对象 | 版本来源 | 发布与同步 | 生效方式 |
+|---|---|---|---|
+| DSH.app + App runtime | `CFBundleShortVersionString` / `dsh-app-v*` | GitHub Actions 构建 GitHub Release（DMG + ZIP） | 安装新 App 后重启 App |
+| Hang 插件与技能 | Git commit | App 后台同步仓库；设置 → Hang 的插件可手动“同步并重载” | 当前 dsh 进程和当前页面直接 update，不重启 App |
+| `@deepseek-ai/dsh` | npm semver | npmjs | 更新完成后重启 App，启动新的 dsh 进程 |
 
-## 目录结构
+App runtime 是 DSH.app 的组成部分，不是 Hang 插件。它没有动态 `pluginId`、不依附某个 Agent、不进入审批队列，也不会显示在“Hang 的插件”列表。只有 `plugins/` 目录下的扩展才进入动态 Cordis registry。
 
+## 目录
+
+```text
+apps/dsh/
+  native/                 # AppKit + WKWebView 原生壳、构建脚本和图标
+  runtime/
+    host/                 # App 状态、版本、仓库同步、插件定义和父进程生命周期
+    client/               # App 设置、Hang 插件设置、可信自动挂载与页面内 update
+    web-boot.yml          # App 专属 dsh web overlay
+plugins/
+  quota-monitor/          # 真正的 Hang 动态插件；以后新增插件也只放这里
+skills/                   # 随插件仓库同步到 ~/.dsh/skills
+.github/workflows/
+  build-dsh-app.yml       # 写入版本、构建闭包、打 DMG/ZIP、发布 Release
+bootstrap.sh              # 新机器：同步仓库/技能并安装 Release App
+install.sh                # 下载 Release DMG 并安装到 ~/Applications
+launch-web.sh             # 使用已安装 App runtime 的开发诊断入口
 ```
-bootstrap.sh                # App 后台执行的冷启动引导：拉仓库 + 同步技能 + 调 install.sh
-install.sh                  # 构建/更新 DSH.app 壳 + 安装技能（不再安装 agent-preset）
-launch-web.sh               # 手动启动正式全局 dsh，并生成同一份运行时 overlay
-overlays/web/web-boot.yml   # App 专属 overlay 模板：openBrowser:false + insert 注入 dsh-boot
-overlays/web/plugins/dsh-boot.js  # dsh-boot：agent/created 自动启用 UI 插件 + /api/dsh-plugins/enable 端点
-packages/<name>/            # 每个插件：code.host.js / code.client.js / README.md（最新版一份）
-  ├── dsh-app-hub/          # 设置 → App 页（生成壳、版本、更新 dsh、重启服务）+ 左下角更新条；assets/DSHApp/ 持壳源码与构建脚本
-  ├── hang-plugins/         # 设置 → Hang 的插件管理器
-  └── quota-monitor/        # 侧边栏底部用量/余额监视
-skills/                     # 仓库自带技能（dsh-plugin-install / dsh-plugin-dev 等），bootstrap 同步到 ~/.dsh/skills/
+
+本机运行目录同样分开：
+
+```text
+~/Applications/DSH.app                 # App 与随 App 发布的 runtime
+~/.dsh/dsh-desktop/                    # Git 插件/技能源码副本
+~/.dsh/runtime/dsh-desktop/            # 日志、generated overlay、停用插件状态
+~/.dsh/skills/                         # dsh 实际读取的技能
 ```
 
-## 与官方的关系（无冲突）
+## 打开 App 后的链路
 
-- 官方部署目录：`/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/`，升级整目录替换。
-- 本仓库本机副本：`~/.dsh/hang-plugins`（用户数据目录，官方升级不触碰）。
-- 插件以动态会话插件运行，`pluginId` 由系统分配，不与官方包重名。
-- dsh-boot 经 profile 的 `--patch overlay`（`insert:` 语法）注入，只进本机 web profile，不改官方安装。
+1. 原生 App 检查 Node.js 与正式安装的 `dsh`；仅在缺少 dsh 时通过对应 npm 安装 `@deepseek-ai/dsh@latest`。缺少 Node/npm 或安装失败会留在启动页并显示日志，不先打开空 WKWebView。
+2. App 只从自身 `Contents/Resources/runtime` 生成 overlay，把静态 Host/Client runtime 装入 web profile；启动不依赖插件仓库里是否存在 App Hub。
+3. dsh web 启动后，App runtime 在后台同步 `~/.dsh/dsh-desktop` 和技能。网络或 Git 同步失败只让插件域显示失败，不阻止 DSH 主界面启动。
+4. 首个 Agent 就绪后，Host runtime 只扫描仓库的 `plugins/`，为每个实际插件定义最新 Package。
+5. 静态 Client runtime 比较当前页面已加载的 `packageId`：未加载就 `run`，源码变化就 `update`。这条可信 App 链不创建审批请求，因此页面刷新、App 重启和 dsh 重启后都会自动恢复插件。
+6. App 退出时终止自己持有的 dsh 子进程；Host runtime 也监控 App 父进程，App 被强杀后不会留下孤儿服务。
 
-## 当前插件
+## 安装
 
-| 插件 | 说明 |
-|---|---|
-| `dsh-app-hub` | 设置 → App 页（DSH.app 生成/重建、版本检查、更新 dsh、重启服务）+ 左下角新版本浮条 |
-| `hang-plugins` | 设置 → Hang 的插件管理器（同步仓库、列出插件、启用引导） |
-| `quota-monitor` | 侧边栏底部用量/余额监视（OpenCode Go 订阅 + DeepSeek 官方余额，按当前模型 provider 匹配） |
+普通用户从 Releases 下载 `DSH.dmg`，把 DSH.app 拖到 Applications。当前使用 ad-hoc 签名，另一台 Mac 第一次打开可能需要在“系统设置 → 隐私与安全性”点击“仍要打开”。
 
-## 通过 CI 发布 DSH.app（GitHub Actions）
-
-`.github/workflows/build-dsh-app.yml` 在 macos runner 上自动构建 DSH.app 并打包 zip：
-
-- **手动触发**：Actions → Build DSH.app → Run workflow，填版本号（如 `0.1.0`）→ 自动打 tag `v0.1.0` 并发布 Release；留空则只上传 artifact（测试用）。
-- **打 tag**：`git tag v0.1.0 && git push origin v0.1.0` → 自动构建并发布到该 tag 的 Release。
-- 下载地址：仓库 Releases 页（如 https://github.com/hanger-source/dsh-plugins/releases ）。
-- **首次打开**：因 ad-hoc 签名，需右键 DSH.app → 打开（Gatekeeper 拦一次）。
-
-## 手动启用 / 更新插件
+仓库安装入口：
 
 ```bash
-# 同步（拉到最新）
-git -C ~/.dsh/hang-plugins pull
-
-# 手动启用某个插件（一般不需要——App 启动时 dsh-boot 已自动启用全部 UI 插件）
-curl 'http://127.0.0.1:3080/api/dsh-plugins/enable?key=<插件key>'
-
-# 新增 / 更新插件：把最新源码写入 packages/<name>/ 的两个文件，然后
-git -C ~/.dsh/hang-plugins add -A && git -C ~/.dsh/hang-plugins commit -m "update: <name>" && git -C ~/.dsh/hang-plugins push
+bash bootstrap.sh
 ```
+
+`install.sh` 只安装 CI Release，不会在用户机器上调用 `swiftc` 重新生成 App。
+
+## App Release
+
+Actions → **Release DSH Desktop**：
+
+- 版本留空：在现有 `dsh-app-v*` Release 上递增 patch。
+- 输入 `0.2.0`：发布 `dsh-app-v0.2.0`。
+- 手动推送 `dsh-app-v*` tag：构建该版本。
+
+CI 在构建前确定版本并写入 Info.plist，检查 App binary、完整静态 runtime 和 ad-hoc 签名，然后发布：
+
+- `DSH.dmg`：人工下载安装；
+- `DSH.app.zip`：脚本或调试下载；
+- `SHA256SUMS.txt`：传输完整性检查。
+
+失败的构建、版本、签名、tag 或 Release 操作会让 workflow 失败，不会用 `|| true` 伪装成功。
+
+## 插件同步与重载
+
+设置 → Hang 的插件 → **同步并重载** 完成一条操作：
+
+```text
+git pull --ff-only
+  → 同步 skills
+  → 比较插件最新源码与当前 Package
+  → define 新 Package（仅变化的插件）
+  → 当前页面 startUserRun(update)
+```
+
+插件的启用/停用状态写在 `~/.dsh/runtime/dsh-desktop/disabled-plugins.json`。主动停用的插件不会在下一次 App 启动时被自动开启；其他插件会自动恢复并且不重复审批。
+
+## dsh 更新与重启
+
+设置 → App → `@deepseek-ai/dsh` 显示已安装与 npm 最新版本。“更新并重启 APP”先更新全局 npm 包，成功后通过原生桥重启整个 App；因此原生窗口、dsh web、静态 runtime 和动态插件会在同一个新进程闭包内重新装配。
+
+⌘R 只刷新当前页面并重新挂载 Client half，不更新 App binary，也不重启 dsh 服务。
