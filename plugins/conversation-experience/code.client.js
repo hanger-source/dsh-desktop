@@ -1,7 +1,7 @@
 // 会话体验 —— Client 半
 // 保留 DSH 原生终端卡，只增强被截断命令的展开交互；排队消息通过正式 Slot 接管。
 return {
-  inject: ['slots'],
+  inject: ['slots', 'sessions'],
   apply(ctx) {
     styles.insert(`
       [data-terminal] .dsh-flow-command-toggle{cursor:pointer}
@@ -37,7 +37,8 @@ return {
     `)
 
     const slots = ctx.get('slots')
-    if (!slots) return
+    const sessions = ctx.get('sessions')
+    if (!slots || !sessions) return
 
     ctx.effect(() => {
       const bindings = new Map()
@@ -130,7 +131,10 @@ return {
         setBusy(id)
         setError(null)
         try {
-          await host.call('flowui.queue.update', { sessionId: props.sessionId, itemId: id, action })
+          const session = sessions.binding(props.sessionId)?.session
+          if (!session) throw new Error('当前会话连接不可用')
+          const result = await session.updateQueue(id, action)
+          if (!result.ok) throw new Error(result.error.code + '：' + result.error.message)
           return true
         } catch (actionError) {
           const detail = String((actionError && actionError.message) || actionError)
