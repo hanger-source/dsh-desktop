@@ -330,10 +330,9 @@ final class ServerManager {
         }
         isListening { ready in
             if ready {
-                if let url = self.serverURL() {
-                    completion(.ready(url))
-                    return
-                }
+                // HTTP 响应才是启动完成的事实；server.log 只用于诊断，不能作为 App 可用性的门禁。
+                completion(.ready(Env.rootURL))
+                return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
                 self.poll(attempt: attempt + 1, completion: completion)
@@ -352,17 +351,6 @@ final class ServerManager {
         ownsServer = false
         try? logHandle?.close()
         logHandle = nil
-    }
-
-    private func serverURL() -> URL? {
-        let path = Env.runtimeDir + "/server.log"
-        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
-        for line in text.split(separator: "\n").reversed() {
-            guard let marker = line.range(of: "dsh web: ") else { continue }
-            let value = String(line[marker.upperBound...]).trimmingCharacters(in: .whitespacesAndNewlines)
-            if let url = URL(string: value), url.host == "127.0.0.1", url.port == Env.port { return url }
-        }
-        return nil
     }
 
     private func serverLogTail() -> String {
