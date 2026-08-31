@@ -5,7 +5,7 @@
 // 运行效果：侧边栏底部「插件/用量/设置」三行中的用量面板，
 // OpenCode Go 名称加粗并与更新时间同行，小时/本周/本月逐行排布，剩余倒计时无"后重置"字样。
 return {
-  inject: ['slots', 'timer'],
+  inject: ['slots', 'timer', 'remote'],
   apply(ctx) {
     // 让 footerActions 容器可换行：cordis 插件按钮独占第一行，用量面板第二行，设置第三行。
     styles.insert('\n' +
@@ -91,7 +91,7 @@ return {
             if (active) setError(String((e && e.message) || e))
           }
         }
-        const stopSelection = ctx.interval(checkSelection, 1000)
+        const stopSelection = ctx.remote.$on('settings/document-updated', () => { void checkSelection() })
         return () => {
           active = false
           stopRefresh()
