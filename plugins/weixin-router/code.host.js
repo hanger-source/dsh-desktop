@@ -82,7 +82,21 @@ function createFileQueue(ctx) {
 // ================= 持久化状态（游标 + 对话用户 + 驻守开关） =================
 function createState(ctx) {
   const memory = { cursor: 0, chatWith: '', standby: true }
+  // state.json 读写前先确保聊天室目录存在（endpoint 首条消息前目录可能不存在）
+  async function ensureRoom() {
+    try {
+      const handle = ctx.subprocess.spawn({
+        argv: ['/bin/sh', '-c', 'mkdir -p "$WX_ROOM"'],
+        cwd: '/',
+        env: { WX_ROOM: ROOM },
+        stdio: { stdin: 'ignore', stdout: { maxBytes: 1024 }, stderr: { maxBytes: 1024 } },
+        graceMs: 5000,
+      })
+      await handle.done
+    } catch (err) { console.error('[weixin-router] ensureRoom: ' + String(err)) }
+  }
   async function load() {
+    await ensureRoom()
     try {
       const target = await ctx.fs.resolve(STATE)
       const saved = JSON.parse(await ctx.fs.readText(target))
@@ -93,6 +107,7 @@ function createState(ctx) {
     return memory
   }
   async function save() {
+    await ensureRoom()
     try {
       const target = await ctx.fs.resolve(STATE)
       await ctx.fs.writeText(target, JSON.stringify(memory))
