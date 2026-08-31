@@ -127,20 +127,24 @@ class PluginRepository {
       if (wanted && !wanted.has(source.key)) continue
       if (this.disabled.has(source.key)) continue
       try {
+        const name = source.meta.name || source.key
+        const purpose = source.meta.purpose || ''
         let plugin = this.findPlugin(source, plugins)
         const previousPackageId = plugin ? plugin.currentPackageId : null
         let packageId = null
         if (plugin) {
           const current = this.currentPackage(runner, agent, plugin)
           const sameSource = current
+            && current.name === name
+            && current.purpose === purpose
             && ((current.code && current.code.host) || '') === source.host
             && ((current.code && current.code.client) || '') === source.client
           if (sameSource) {
             packageId = current.packageId
           } else {
             const defined = runner.define({
-              name: source.meta.name || source.key,
-              purpose: source.meta.purpose || '',
+              name,
+              purpose,
               plugin: { kind: 'existing', pluginId: plugin.pluginId },
               code: { host: source.host || undefined, client: source.client || undefined },
               sessionId: agent.id,
@@ -149,8 +153,8 @@ class PluginRepository {
           }
         } else {
           const defined = runner.define({
-            name: source.meta.name || source.key,
-            purpose: source.meta.purpose || '',
+            name,
+            purpose,
             plugin: { kind: 'new', idPrefix: source.meta.idPrefix },
             code: { host: source.host || undefined, client: source.client || undefined },
             sessionId: agent.id,

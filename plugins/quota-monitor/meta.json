@@ -1,1 +1,1 @@
-{ "name": "quota-monitor 用量监视", "purpose": "侧边栏底部用量/余额监视（OpenCode Go 订阅用量 + DeepSeek 官方余额）", "idPrefix": "quota", "matchPrefix": ["quota"] }
+{ "name": "订阅/余额", "purpose": "显示 OpenCode Go 订阅用量和 DeepSeek 官方余额", "idPrefix": "quota", "matchPrefix": ["quota"] }
