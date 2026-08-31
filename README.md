@@ -5,24 +5,24 @@
 
 ## 链路总览（打开 DSH.app 之后发生的事）
 
-1. **DSH.app（Swift 壳）** 检查本机是否装了 `dsh`：没有则 `npm install -g @deepseek-ai/dsh@latest`，有则直接用（不做版本比对/自动升级）。
-2. 以 `dsh --profile web --patch overlays/web/web-boot.yml --no-open` 拉起服务（端口 3080）。`web-boot.yml` 是 App 专属 overlay（手动 `dsh web` 不加载）：
+1. **DSH.app（Swift 壳）** 先显示窗口并检查本机是否装了正式发布的全局 `dsh`；没有则在窗口中显示安装阶段并执行 `npm install -g @deepseek-ai/dsh@latest`。安装失败直接显示 `install.log` 的错误，不打开空白 WKWebView。
+2. App 等待内置 `bootstrap.sh` 完成：clone/pull 本仓库到 `~/.dsh/hang-plugins`、同步技能；失败直接显示 `bootstrap.log`，不继续启动旧副本。
+3. App 根据当前 `DSH_HOME` 生成含 dsh-boot 绝对路径的运行时 overlay，再以正式全局 `dsh --profile web --patch <generated-overlay> --no-open` 拉起服务。模板 `web-boot.yml`：
    - `openBrowser: false`（`--no-open` 在 `--profile` 模式下会被 dsh CLI 忽略，必须从配置层关，否则每次启动弹浏览器）；
    - `insert:` 注入 **dsh-boot** 宿主引导插件。
-3. 后台执行 `bootstrap.sh`：clone/pull 本仓库到 `~/.dsh/hang-plugins` → 同步 `skills/` 到 `~/.dsh/skills/` → 调 `install.sh`（构建/更新 `~/Applications/DSH.app` 壳 + 装技能）。
 4. **dsh-boot 插件** 监听 `agent/created`，自动把 `packages/` 下带 UI 的插件 define + run 启用（幂等：每个包进程内只启用一次，多次 agent/created 不重复定义）：
    - `dsh-app-hub`（设置 → App 页 + 左下角更新条）
    - `hang-plugins`（设置 → Hang 的插件管理器）
    - `quota-monitor`（侧边栏底部用量/余额）
-5. **⌘Q 退出**：App 的 `killPort` 关闭 3080 服务 —— 先 `SIGTERM` 自己拉起的 dsh web 进程（Darwin 函数，零子进程），再用 lsof（输出走临时文件，不用管道 `readDataToEndOfFile`，避免 lsof 子进程残留 FD 导致退出卡死）兜底清理监听 3080 的残留进程。
+5. dsh 输出带 token 的启动 URL 后，App 才把 WKWebView 导向真实页面。**⌘Q 退出**只 `SIGTERM` App 自己持有的 dsh 子进程；若 3080 已被外部进程占用，App 明确报错，不接管也不杀掉它。dsh-boot 同时监控 `DSH_PARENT_PID`，App 被强杀后服务也会退出。
 
 ## 目录结构
 
 ```
 bootstrap.sh                # App 后台执行的冷启动引导：拉仓库 + 同步技能 + 调 install.sh
 install.sh                  # 构建/更新 DSH.app 壳 + 安装技能（不再安装 agent-preset）
-launch-web.sh               # 手动启动 dsh web（同样带 web-boot.yml overlay）
-overlays/web/web-boot.yml   # App 专属 overlay：openBrowser:false + insert 注入 dsh-boot
+launch-web.sh               # 手动启动正式全局 dsh，并生成同一份运行时 overlay
+overlays/web/web-boot.yml   # App 专属 overlay 模板：openBrowser:false + insert 注入 dsh-boot
 overlays/web/plugins/dsh-boot.js  # dsh-boot：agent/created 自动启用 UI 插件 + /api/dsh-plugins/enable 端点
 packages/<name>/            # 每个插件：code.host.js / code.client.js / README.md（最新版一份）
   ├── dsh-app-hub/          # 设置 → App 页（生成壳、版本、更新 dsh、重启服务）+ 左下角更新条；assets/DSHApp/ 持壳源码与构建脚本

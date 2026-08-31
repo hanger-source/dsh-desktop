@@ -9,8 +9,8 @@ REMOTE="https://github.com/hanger-source/dsh-plugins.git"
 SKILL_DST="${DSH_HOME:-$HOME/.dsh}/skills"
 
 if [ -d "$REPO/.git" ]; then
-  git -C "$REPO" pull --quiet || echo "提示：pull 失败，继续使用本地副本"
-  echo "[1/3] 仓库已存在，已尝试更新: $REPO"
+  git -C "$REPO" pull --quiet
+  echo "[1/3] 仓库已更新: $REPO"
 else
   git clone --quiet "$REMOTE" "$REPO"
   echo "[1/3] 已 clone: $REPO"

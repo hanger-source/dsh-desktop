@@ -52,7 +52,6 @@ return {
       const [updating, setUpdating] = React.useState(false)
       const [updateResult, setUpdateResult] = React.useState(null)
       const [working, setWorking] = React.useState(null)
-      const [restartMsg, setRestartMsg] = React.useState(null)
       const [confirmAction, setConfirmAction] = React.useState(null)
 
       const run = rpcPending
@@ -96,32 +95,6 @@ return {
           .then(() => setUpdating(false))
       }
 
-      const doRestart = () => {
-        if (confirmAction !== 'restart') {
-          setConfirmAction('restart')
-          try { window.setTimeout(function(){ setConfirmAction(function(c){ return c === 'restart' ? null : c }) }, 3000) } catch (e) {}
-          return
-        }
-        setConfirmAction(null)
-        setWorking('restart')
-        setRestartMsg('正在重启（约 3-6 秒）…')
-        host.call('app-launcher', { action: 'restart' })
-          .then((r) => {
-            setWorking(null)
-            if (r && r.ok) {
-              setRestartMsg('已发送重启，服务约 3-6 秒恢复（页面会短暂断开重连）。')
-              run(setApp)(call('app-launcher', { action: 'status' }))
-            } else {
-              setRestartMsg('重启未生效：' + (r && r.detail ? String(r.detail).slice(0, 140) : '无输出') +
-                (r && r.sandbox && r.sandbox.denied ? ' —— 沙箱拒绝了 kill，请在终端执行：lsof -tiTCP:3080 | xargs kill' : ''))
-            }
-          })
-          .catch((e) => {
-            setWorking(null)
-            setRestartMsg('重启失败：' + String((e && e.message) || e))
-          })
-      }
-
       const a = app.data
       const d = info.data
 
@@ -143,14 +116,8 @@ return {
                   h('button',
                     { className: 'dsh-app-btn', onClick: () => act('launch', setWorking), disabled: working === 'launch' },
                     working === 'launch' ? '打开中…' : '打开 DSH'),
-                  h('button',
-                    { className: 'dsh-app-btn', onClick: doRestart, disabled: working === 'restart' },
-                    working === 'restart' ? '重启中…' : (confirmAction === 'restart' ? '确认重启？' : '重启服务')),
                 ]),
-                restartMsg
-                  ? h('div', { className: /失败|未生效/.test(restartMsg) ? 'dsh-app-err' : 'dsh-app-muted' }, restartMsg)
-                  : null,
-                h('div', { className: 'dsh-app-muted' }, '「打开 DSH」会确保 dsh web 在后台启动（端口 ' + (a ? a.port : 3080) + '），然后打开窗口；已装到 ' + (a ? a.appDir : '~/Applications/DSH.app') + ' 后，双击图标效果相同。'),
+                h('div', { className: 'dsh-app-muted' }, '「打开 DSH」由原生 App 持有 dsh web（端口 ' + (a ? a.port : 3080) + '）的启动、重启和退出；重启请使用 DSH 菜单。App 路径：' + (a ? a.appDir : '~/Applications/DSH.app')),
               ],
       ])
 
@@ -197,8 +164,6 @@ return {
         resultNode,
         h('div', { className: 'dsh-app-muted' }, '手动更新（推荐在终端执行后再重启）：'),
         h('div', { className: 'dsh-app-mono' }, 'npm install -g @deepseek-ai/dsh@latest'),
-        h('div', { className: 'dsh-app-muted' }, '不安装、临时跑最新版：'),
-        h('div', { className: 'dsh-app-mono' }, 'npm exec --yes --package=@deepseek-ai/dsh@latest -- dsh web --no-open'),
       ])
 
       return h('div', null, [appCard, updateCard])
@@ -245,30 +210,16 @@ return {
           .then(() => setBusy(null))
       }
 
-      const doRestart = () => {
-        if (confirmAction !== 'restart') {
-          setConfirmAction('restart')
-          try { window.setTimeout(function(){ setConfirmAction(function(c){ return c === 'restart' ? null : c }) }, 3000) } catch (e) {}
-          return
-        }
-        setConfirmAction(null)
-        setBusy('restart')
-        host.call('app-launcher', { action: 'restart' }).catch(() => {})
-      }
-
       const updated = result && result.exitCode === 0
       const failed = result && result.exitCode !== 0
       return h('div', { className: 'dsh-app-banner' }, [
         updated
-          ? h('span', { className: 'dsh-app-banner-text dsh-app-ok' }, '更新完成，重启服务后生效')
+          ? h('span', { className: 'dsh-app-banner-text dsh-app-ok' }, '更新完成，请用 DSH 菜单重启服务')
           : h('span', { className: 'dsh-app-banner-text' }, '发现新版本 ' + d.latest),
         failed ? h('span', { className: 'dsh-app-err' }, '更新失败：' + (result.stderr || '')) : null,
         busy === 'updating' ? h('span', { className: 'dsh-app-muted' }, '更新中…') : null,
         !updated && busy === null
           ? h('button', { className: 'dsh-app-banner-btn', onClick: doUpdate }, confirmAction === 'update' ? '确认更新？' : '更新')
-          : null,
-        updated && busy === null
-          ? h('button', { className: 'dsh-app-banner-btn', onClick: doRestart }, confirmAction === 'restart' ? '确认重启？' : '重启服务生效')
           : null,
         h('button', { className: 'dsh-app-banner-close', onClick: () => setDismissed(true) }, '✕'),
       ])

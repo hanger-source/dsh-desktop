@@ -1,10 +1,11 @@
 // DSH App Hub — Host half (v3.1: launcher only — 点开图标能显示; no autostart, no PWA).
 return {
   apply(ctx) {
-    const HOME = '/Users/fuhangbo'
+    const HOME = process.env.HOME
+    if (!HOME) throw new Error('无法解析 HOME')
+    const DSH_HOME = process.env.DSH_HOME || HOME + '/.dsh'
     const APP_DIR = HOME + '/Applications/DSH.app'
-    const ICON_SRC = HOME + '/.dsh/hang-plugins/.runtime/dsh-app-hub'
-    const LOG_DIR = HOME + '/.dsh/hang-plugins/.runtime/dsh-app-hub'
+    const ICON_SRC = DSH_HOME + '/hang-plugins/.runtime/dsh-app-hub'
     const PORT = 3080
     const URL = 'http://127.0.0.1:' + PORT + '/'
 
@@ -151,12 +152,12 @@ return {
 
     // ---------- launcher app content ----------
     // 原生壳构建脚本（含 Swift 源码）放在仓库 ~/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/，可单独更新
-    const BUILD_SCRIPT_PATH = HOME + '/.dsh/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh'
+    const BUILD_SCRIPT_PATH = DSH_HOME + '/hang-plugins/packages/dsh-app-hub/assets/DSHApp/dsh-app-build.sh'
 
     // ---------- launcher actions ----------
     async function launcherStatus() {
-      const portUp = await runCmd('/usr/bin/curl -sf --max-time 2 ' + URL + ' >/dev/null 2>&1 && echo up || echo down', 8000, 1024)
-      const appCheck = await runCmd('test -x ' + APP_DIR + '/Contents/MacOS/DSHApp && echo yes || echo no', 8000, 1024)
+      const portUp = await runCmd('/usr/bin/curl -sS -o /dev/null --max-time 2 ' + URL + ' && echo up || echo down', 8000, 1024)
+      const appCheck = await runCmd('test -x ' + JSON.stringify(APP_DIR + '/Contents/MacOS/DSHApp') + ' && echo yes || echo no', 8000, 1024)
       return {
         appReady: (appCheck.stdout || '').trim() === 'yes',
         portUp: (portUp.stdout || '').trim() === 'up',
@@ -168,36 +169,22 @@ return {
     async function createApp() {
       // 调用磁盘上的构建脚本（含 Swift 源码）生成 DSH.app
       const steps = []
-      const exists = await runCmd('test -f ' + BUILD_SCRIPT_PATH + ' && echo yes || echo no', 8000, 1024)
+      const exists = await runCmd('test -f ' + JSON.stringify(BUILD_SCRIPT_PATH) + ' && echo yes || echo no', 8000, 1024)
       if ((exists.stdout || '').trim() !== 'yes') {
         steps.push({ step: 'build script', ok: false, detail: '缺失 ' + BUILD_SCRIPT_PATH + '（可从 dsh-app-hub 项目目录拷贝 dsh-app-build.sh）' })
         return { ok: false, steps, status: await launcherStatus() }
       }
-      const b = await runCmd('bash ' + BUILD_SCRIPT_PATH + ' ' + APP_DIR + ' ' + ICON_SRC, 120000, 8192)
+      const b = await runCmd('bash ' + JSON.stringify(BUILD_SCRIPT_PATH) + ' ' + JSON.stringify(APP_DIR) + ' ' + JSON.stringify(ICON_SRC), 120000, 8192)
       steps.push({ step: 'swift build', ok: b.exitCode === 0, detail: b.stderr || b.stdout, sandbox: b.sandbox || null })
       const st = await launcherStatus()
       return { ok: b.exitCode === 0, steps, status: st }
     }
 
     async function launchApp() {
-      // 启动壳：壳自己负责拉起 server、打开窗口、断线重连
-      const res = await runCmd('/usr/bin/open ' + APP_DIR, 20000, 2048)
+      // 启动壳：壳自己负责准备正式运行时、持有 server 并打开窗口
+      const res = await runCmd('/usr/bin/open ' + JSON.stringify(APP_DIR), 20000, 2048)
       const st = await launcherStatus()
       return { ok: res.exitCode === 0, detail: res.stderr || res.stdout, status: st }
-    }
-
-    async function restartService() {
-      // 递延自拉起：先安排 3 秒后自动启动新 dsh web，再杀掉旧进程——
-      // 重启不依赖壳看门狗，壳开不开都能恢复（更新 CLI 后立即生效）。
-      const boot = 'sleep 3; /usr/bin/nohup /opt/homebrew/bin/dsh --profile web --patch ' + HOME + '/.dsh/hang-plugins/overlays/web/web-boot.yml --no-open >>' + LOG_DIR + '/server.log 2>&1 &'
-      await runCmd('/bin/bash -c ' + JSON.stringify(boot), 8000, 1024)
-      const res = await runCmd('/usr/sbin/lsof -tiTCP:3080 -sTCP:LISTEN | /usr/bin/xargs /bin/kill 2>/dev/null; true', 15000, 2048)
-      return {
-        ok: res.exitCode === 0,
-        detail: res.stderr || res.stdout,
-        sandbox: res.sandbox || null,
-        status: await launcherStatus(),
-      }
     }
 
     const launcher = async (args) => {
@@ -206,7 +193,6 @@ return {
         if (action === 'status') return { action, ...(await launcherStatus()) }
         if (action === 'create') return { action, ...(await createApp()) }
         if (action === 'launch') return { action, ...(await launchApp()) }
-        if (action === 'restart') return { action, ...(await restartService()) }
         return { action, ok: false, detail: 'unknown action: ' + action }
       } catch (e) {
         return { action, ok: false, detail: String((e && e.message) || e) }

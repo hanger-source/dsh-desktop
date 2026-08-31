@@ -21,10 +21,9 @@ if [ -f "$SHELL_ASSETS/dsh-app-build.sh" ]; then
     # 运行日志/图标目录
     mkdir -p "$DST_HOME/hang-plugins/.runtime/dsh-app-hub"
     [ -f "$SHELL_ASSETS/icon-512.png" ] && cp "$SHELL_ASSETS/icon-512.png" "$DST_HOME/hang-plugins/.runtime/dsh-app-hub/icon-512.png"
-    echo "==> 构建并安装 DSH.app（输出 ~/Applications）"
-    bash "$SHELL_ASSETS/dsh-app-build.sh" "$HOME/Applications" "$SHELL_ASSETS" \
-      && echo "壳已安装：$HOME/Applications/DSH.app（双击打开；也可在 dsh 设置 → App 里管理）" \
-      || echo "壳构建失败：$?（详见上方输出）"
+    echo "==> 构建并安装 DSH.app（输出 ~/Applications/DSH.app）"
+    bash "$SHELL_ASSETS/dsh-app-build.sh" "$HOME/Applications/DSH.app" "$SHELL_ASSETS"
+    echo "壳已安装：$HOME/Applications/DSH.app（双击打开；也可在 dsh 设置 → App 里管理）"
   fi
 else
   echo "跳过壳：未找到 $SHELL_ASSETS/dsh-app-build.sh"

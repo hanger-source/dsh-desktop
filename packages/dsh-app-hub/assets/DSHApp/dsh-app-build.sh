@@ -1,10 +1,12 @@
 #!/bin/bash
 # 由 dsh 插件生成/更新：构建原生壳 DSH.app（Swift + AppKit + WKWebView）。
-# 用法: bash dsh-app-build.sh [输出目录，默认 ~/Applications/DSH.app] [工作目录，默认 ~/.dsh/hang-plugins/.runtime/dsh-app-hub]
+# 用法: bash dsh-app-build.sh [输出 App 路径，默认 ~/Applications/DSH.app] [图标目录，默认脚本目录]
 set -euo pipefail
 
 APP="${1:-$HOME/Applications/DSH.app}"
-WORK="${2:-$HOME/.dsh/hang-plugins/.runtime/dsh-app-hub}"
+SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SRC_DIR/../../../.." && pwd)"
+WORK="${2:-$SRC_DIR}"
 BIN_DIR="$APP/Contents/MacOS"
 RS_DIR="$APP/Contents/Resources"
 ICON_SRC="$WORK"
@@ -13,11 +15,17 @@ mkdir -p "$BIN_DIR" "$RS_DIR"
 
 # --- Swift 源码 ---
 # --- Swift 源码：从本脚本同目录的 DSHApp.swift 读取（单一事实来源，改源码不必再改脚本）---
-SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
 if [ -f "$SRC_DIR/DSHApp.swift" ]; then
   cp "$SRC_DIR/DSHApp.swift" "$BIN_DIR/DSHApp.swift"
 else
   echo "缺少 $SRC_DIR/DSHApp.swift" >&2; exit 1
+fi
+
+if [ -f "$REPO_ROOT/bootstrap.sh" ]; then
+  cp "$REPO_ROOT/bootstrap.sh" "$RS_DIR/bootstrap.sh"
+  chmod +x "$RS_DIR/bootstrap.sh"
+else
+  echo "缺少 $REPO_ROOT/bootstrap.sh" >&2; exit 1
 fi
 
 # --- Info.plist ---
