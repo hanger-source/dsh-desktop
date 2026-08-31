@@ -231,10 +231,19 @@ return {
       }
     }
 
-    // ================= 网关启动 =================
-    async function startGateway() {
-      const r = await run(['/bin/sh', '-c', '/opt/homebrew/bin/dsh-weixin start 2>&1 || /opt/homebrew/bin/dsh-weixin run 2>&1'], { graceMs: 30000, maxBytes: 65536 })
-      return { exitCode: r.exitCode, output: r.stdout.trim() }
+    // ================= 网关管理（启动/停止/重启） =================
+    async function gatewayOperation(action) {
+      const cmd = {
+        start: 'dsh-weixin restart 2>&1 || dsh-weixin start 2>&1',
+        stop: 'dsh-weixin stop 2>&1',
+        restart: 'dsh-weixin restart 2>&1',
+      }[action]
+      if (!cmd) return { error: '未知操作 ' + action }
+      const r = await run(['/bin/sh', '-c', '/opt/homebrew/bin/' + cmd], { graceMs: 60000, maxBytes: 65536 })
+      // 等状态稳定
+      await ctx.timeout(2500)
+      const fresh = await gatewayStatus()
+      return { exitCode: r.exitCode, output: r.stdout.trim(), gateway: fresh }
     }
 
     // ================= RPC handlers =================
@@ -251,7 +260,13 @@ return {
       try { return await pollLogin(args) } catch (err) { return { error: String(err) } }
     })
     harness.handle('wx.start', async () => {
-      try { return await startGateway() } catch (err) { return { error: String(err) } }
+      try { return await gatewayOperation('start') } catch (err) { return { error: String(err) } }
+    })
+    harness.handle('wx.stop', async () => {
+      try { return await gatewayOperation('stop') } catch (err) { return { error: String(err) } }
+    })
+    harness.handle('wx.restart', async () => {
+      try { return await gatewayOperation('restart') } catch (err) { return { error: String(err) } }
     })
     harness.handle('wx.standby', async (args) => {
       try {
@@ -264,6 +279,6 @@ return {
       } catch (err) { return { error: String(err) } }
     })
 
-    console.log('[weixin-aibot-gateway] Host 就绪（自举/扫码/状态/驻守 RPC）')
+    console.log('[weixin-aibot-gateway] Host 就绪（自举/扫码/启停/状态/驻守 RPC）')
   },
 }
