@@ -7,7 +7,7 @@
 - 根据当前会话 `modelDirectories.directoryFor(sessionId).store.current.provider` 匹配数据源；provider 命名差异由 `SOURCES` 别名覆盖（如 `deepseek-official` → DeepSeek 官方）：
   - **OpenCode Go（订阅型）**：`小时 / 本周 / 本月` 三档用量百分比 + 迷你进度条 + 剩余倒计时
   - **DeepSeek 官方（充值型）**：`余额 ¥xx.xx`（原样精度）
-- UI：侧边栏底部「插件 / 用量 / 设置」三行中的用量面板；名称加粗与更新时间同行；模型 provider 切换后立即换源，每分钟自动刷新当前源的数据。
+- UI：侧边栏底部「插件 / 用量 / 设置」三行中的用量面板；名称加粗与更新时间同行；OpenCode Go 与 DeepSeek 两个数据源在 host 启动时预热并按 provider 共享一分钟缓存，所有会话切换时直接复用，不重复请求。
 
 ## 数据源
 

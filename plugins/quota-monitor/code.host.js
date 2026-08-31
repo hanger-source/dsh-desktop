@@ -99,6 +99,43 @@ return {
       }
     }
 
+    const cache = new Map()
+    const inflight = new Map()
+    const freshFor = entry => entry.ok === false ? 10000 : 60000
+
+    async function entryFor(provider, source) {
+      const key = source.meta.provider
+      const now = Date.now()
+      const held = cache.get(key)
+      if (held && now < held.expiresAt) return held
+      const pending = inflight.get(key)
+      if (pending) return pending
+
+      const operation = (async () => {
+        const ref = credentialRef(provider, source)
+        const entry = ref
+          ? await queryEntry(ref, source.fetch, source.meta)
+          : Object.assign({}, source.meta, { ok: false, error: '当前模型未配置凭证引用' })
+        const capturedAt = new Date().toISOString()
+        const record = { entry, capturedAt, expiresAt: Date.now() + freshFor(entry) }
+        cache.set(key, record)
+        return record
+      })().finally(() => { inflight.delete(key) })
+      inflight.set(key, operation)
+      return operation
+    }
+
+    ctx.on('credentials/reference-updated', () => { cache.clear() })
+    ctx.on('settings/updated', ns => {
+      if (ns === 'llm-pi-ai' || ns === 'llm-deepseek') cache.clear()
+    })
+
+    // 两个数据源各预热一次；所有会话共享缓存，并发切换复用同一个请求。
+    void Promise.allSettled([
+      entryFor('opencode-go', SOURCES['opencode-go']),
+      entryFor('deepseek-official', SOURCES['deepseek-official']),
+    ])
+
     harness.handle('quota.snapshot', async (selection) => {
       // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
       const current = selection && typeof selection.provider === 'string'
@@ -106,12 +143,13 @@ return {
         : null
       const entries = []
       const source = current && SOURCES[current.provider]
+      let capturedAt = new Date().toISOString()
       if (source) {
-        const ref = credentialRef(current.provider, source)
-        if (!ref) entries.push(Object.assign({}, source.meta, { ok: false, error: '当前模型未配置凭证引用' }))
-        else entries.push(await queryEntry(ref, source.fetch, source.meta))
+        const record = await entryFor(current.provider, source)
+        capturedAt = record.capturedAt
+        entries.push(record.entry)
       }
-      return { capturedAt: new Date().toISOString(), current, entries }
+      return { capturedAt, current, entries }
     })
   },
 }
