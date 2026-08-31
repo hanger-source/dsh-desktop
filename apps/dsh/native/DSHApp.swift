@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var webView: WKWebView!
     private var startupPage: StartupPageController!
     private var appliedPageTheme: String?
+    private let appUpdateController = AppUpdateController()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -41,6 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private func handleStartup(_ result: StartupResult) {
         switch result {
         case .ready(let url):
+            AppUpdater.cleanupPreviousInstallation()
             startupPage.stop()
             webView.load(URLRequest(url: url))
         case .failure(let message):
@@ -56,7 +58,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         let appMenu = NSMenu(title: "DSH")
         appMenu.addItem(withTitle: "关于 DSH", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "").target = NSApp
         appMenu.addItem(.separator())
-        appMenu.addItem(withTitle: "检查更新…", action: #selector(openReleases(_:)), keyEquivalent: "").target = self
+        appMenu.addItem(withTitle: "Release 页面…", action: #selector(openReleases(_:)), keyEquivalent: "").target = self
         appMenu.addItem(withTitle: "重启 APP", action: #selector(restartApplication(_:)), keyEquivalent: "").target = self
         appMenu.addItem(.separator())
         let servicesItem = NSMenuItem(title: "服务", action: nil, keyEquivalent: "")
@@ -194,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         webView = WKWebView(frame: content.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = self
+        appUpdateController.attach(to: webView)
         startupPage = StartupPageController(webView: webView)
         content.addSubview(webView)
         let dragView = TitlebarDragView(frame: NSRect(
@@ -269,14 +272,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
                 restartApplication(nil)
                 return
             }
-            if let command = message.body as? [String: Any],
-               command["action"] as? String == "openExternal",
-               let value = command["url"] as? String,
-               let url = URL(string: value),
-               url.scheme == "https" {
-                NSWorkspace.shared.open(url)
-                return
-            }
+            if let command = message.body as? [String: Any], appUpdateController.handle(command) { return }
         }
         guard message.name == "dshAppearance",
               let theme = message.body as? String,

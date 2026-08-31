@@ -136,12 +136,33 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => { load(false) }, [load])
 
+      React.useEffect(() => {
+        const receiveUpdate = event => {
+          const detail = event.detail || {}
+          if (detail.state === 'failed') {
+            setBusy(null)
+            setMessage({ kind: 'error', text: 'App 更新失败：' + (detail.message || '未知错误') })
+            return
+          }
+          setBusy('app')
+          setMessage({ kind: 'ok', text: detail.message || '正在更新 APP…' })
+        }
+        window.addEventListener('dsh-app-update', receiveUpdate)
+        return () => window.removeEventListener('dsh-app-update', receiveUpdate)
+      }, [])
+
       const restart = () => nativeControl()?.postMessage('restart')
-      const openExternal = url => {
-        if (!url) return
+      const updateApp = () => {
         const bridge = nativeControl()
-        if (bridge) bridge.postMessage({ action: 'openExternal', url })
-        else window.open(url, '_blank', 'noopener,noreferrer')
+        if (!bridge || !app.assetUrl || !app.checksumUrl || !app.latest) return
+        setBusy('app')
+        setMessage({ kind: 'ok', text: '正在准备 App 更新…' })
+        bridge.postMessage({
+          action: 'updateApp',
+          url: app.assetUrl,
+          checksumUrl: app.checksumUrl,
+          version: app.latest,
+        })
       }
       const updateDsh = async () => {
         setBusy('dsh')
@@ -181,7 +202,11 @@ window.__ModuleLoader__.load({
           h('div', { className: 'dsh-desktop-row' }, [
             h('button', { className: 'dsh-desktop-btn', disabled: state.loading, onClick: () => load(true) }, state.loading ? '检查中…' : '检查更新'),
             app.updateAvailable
-              ? h('button', { className: 'dsh-desktop-btn dsh-desktop-btn-primary', onClick: () => openExternal(app.assetUrl || app.releaseUrl) }, '下载新 App')
+              ? h('button', {
+                  className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+                  disabled: busy === 'app' || !nativeControl() || !app.assetUrl || !app.checksumUrl,
+                  onClick: updateApp,
+                }, busy === 'app' ? '正在更新…' : '更新 APP')
               : null,
             h('button', { className: 'dsh-desktop-btn', disabled: !nativeControl(), onClick: restart }, '重启 APP'),
           ]),

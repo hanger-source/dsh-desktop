@@ -61,6 +61,7 @@ class VersionService {
     let latest = null
     let releaseUrl = 'https://github.com/' + this.repository + '/releases'
     let assetUrl = null
+    let checksumUrl = null
     let error = null
     try {
       const feed = await requestText('https://github.com/' + this.repository + '/releases.atom')
@@ -71,6 +72,7 @@ class VersionService {
         latest = normalizeVersion(tag)
         releaseUrl = 'https://github.com/' + this.repository + '/releases/tag/' + tag
         assetUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/DSH.dmg'
+        checksumUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/SHA256SUMS.txt'
       }
     } catch (caught) {
       error = caught.message
@@ -82,6 +84,7 @@ class VersionService {
       updateAvailable: compared === null ? null : compared < 0,
       releaseUrl,
       assetUrl,
+      checksumUrl,
       bundlePath: this.appBundlePath,
       error,
     }
