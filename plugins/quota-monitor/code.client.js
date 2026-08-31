@@ -64,6 +64,7 @@ return {
       const wide = props && props.wide !== false
       const [snap, setSnap] = React.useState(null)
       const [error, setError] = React.useState(null)
+      const selectionKey = React.useRef(null)
 
       React.useEffect(() => {
         let active = true
@@ -71,6 +72,7 @@ return {
           try {
             const data = await host.call('quota.snapshot')
             if (active) {
+              selectionKey.current = JSON.stringify(data && data.current)
               setSnap(data)
               setError(null)
             }
@@ -79,10 +81,21 @@ return {
           }
         }
         load()
-        const stop = ctx.interval(load, 60000)
+        const stopRefresh = ctx.interval(load, 60000)
+        const checkSelection = async () => {
+          try {
+            const current = await host.call('quota.selection')
+            const nextKey = JSON.stringify(current)
+            if (selectionKey.current !== null && selectionKey.current !== nextKey) await load()
+          } catch (e) {
+            if (active) setError(String((e && e.message) || e))
+          }
+        }
+        const stopSelection = ctx.interval(checkSelection, 1000)
         return () => {
           active = false
-          stop()
+          stopRefresh()
+          stopSelection()
         }
       }, [])
 

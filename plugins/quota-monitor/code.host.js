@@ -99,8 +99,7 @@ return {
       }
     }
 
-    harness.handle('quota.snapshot', async () => {
-      // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
+    function currentModel() {
       let current = null
       const modelService = ctx.get('agentDefaultModel')
       if (modelService !== undefined) {
@@ -111,6 +110,14 @@ return {
           console.error('[quota] 读取当前模型失败：', e)
         }
       }
+      return current
+    }
+
+    harness.handle('quota.selection', () => currentModel())
+
+    harness.handle('quota.snapshot', async () => {
+      // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
+      const current = currentModel()
       const entries = []
       const source = current && SOURCES[current.provider]
       if (source) {

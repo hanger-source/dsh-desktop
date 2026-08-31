@@ -74,7 +74,7 @@ window.__ModuleLoader__.load({
     function installSettingsNavIcons() {
       const classes = new Map([
         ['Hang 的插件', 'dsh-settings-nav-plugin-store'],
-        ['App', 'dsh-settings-nav-app'],
+        ['Desktop App', 'dsh-settings-nav-app'],
       ])
       const mark = () => {
         for (const button of document.querySelectorAll('[role="dialog"] nav button')) {
@@ -349,7 +349,7 @@ window.__ModuleLoader__.load({
           () => h(PluginSection, { ctx }),
         ))
         const disposeApp = slots.inject('settings.section', () => slots.register(
-          { name: 'settings.section', id: 'dsh-app', order: 30, label: 'App' },
+          { name: 'settings.section', id: 'dsh-app', order: 30, label: 'Desktop App' },
           () => h(AppSection),
         ))
         return () => {
