@@ -1,0 +1,6 @@
+{
+  "name": "微信路由器",
+  "purpose": "微信单窗口承载多 Agent：@焦点路由、管家默认、连续对话、聊天室 JSONL、weixin_chat_search / weixin_find_user / roster 工具、全局驻守（联系渠道=微信）",
+  "idPrefix": "wxr",
+  "matchPrefix": ["wxr"]
+}
