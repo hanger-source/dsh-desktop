@@ -98,11 +98,10 @@ jobs:
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release upload "$TAG" dist/DSH.dmg dist/DSH.app.zip dist/SHA256SUMS.txt --clobber
-          else
-            target=()
-            if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
-              target=(--target "$GITHUB_SHA")
-            fi
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             gh release create "$TAG" dist/DSH.dmg dist/DSH.app.zip dist/SHA256SUMS.txt \
-              --generate-notes --title "DSH Desktop $VERSION" "${target[@]}"
+              --generate-notes --title "DSH Desktop $VERSION" --target "$GITHUB_SHA"
+          else
+            gh release create "$TAG" dist/DSH.dmg dist/DSH.app.zip dist/SHA256SUMS.txt \
+              --generate-notes --title "DSH Desktop $VERSION"
           fi
