@@ -103,11 +103,8 @@ return {
     const inflight = new Map()
     const freshFor = entry => entry.ok === false ? 10000 : 30000
 
-    async function entryFor(provider, source) {
+    function refreshEntry(provider, source) {
       const key = source.meta.provider
-      const now = Date.now()
-      const held = cache.get(key)
-      if (held && now < held.expiresAt) return held
       const pending = inflight.get(key)
       if (pending) return pending
 
@@ -125,6 +122,17 @@ return {
       return operation
     }
 
+    async function entryFor(provider, source, allowStale) {
+      const key = source.meta.provider
+      const held = cache.get(key)
+      if (held && Date.now() < held.expiresAt) return held
+      if (held && allowStale) {
+        void refreshEntry(provider, source)
+        return held
+      }
+      return refreshEntry(provider, source)
+    }
+
     ctx.on('credentials/reference-updated', () => { cache.clear() })
     ctx.on('settings/updated', ns => {
       if (ns === 'llm-pi-ai' || ns === 'llm-deepseek') cache.clear()
@@ -136,8 +144,9 @@ return {
       entryFor('deepseek-official', SOURCES['deepseek-official']),
     ])
 
-    harness.handle('quota.snapshot', async (selection) => {
+    harness.handle('quota.snapshot', async (args) => {
       // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
+      const selection = args && args.selection
       const current = selection && typeof selection.provider === 'string'
         ? { provider: selection.provider, model: String(selection.model || '') }
         : null
@@ -145,7 +154,7 @@ return {
       const source = current && SOURCES[current.provider]
       let capturedAt = new Date().toISOString()
       if (source) {
-        const record = await entryFor(current.provider, source)
+        const record = await entryFor(current.provider, source, args && args.allowStale === true)
         capturedAt = record.capturedAt
         entries.push(record.entry)
       }

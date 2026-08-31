@@ -80,13 +80,18 @@ return {
       const currentModel = useCurrentModel()
       const [snap, setSnap] = React.useState(null)
       const [error, setError] = React.useState(null)
+      const snapshots = React.useRef(new Map())
+      const provider = currentModel && currentModel.provider
 
       React.useEffect(() => {
         let active = true
-        const load = async () => {
+        if (provider && snapshots.current.has(provider)) setSnap(snapshots.current.get(provider))
+        else setSnap(null)
+        const load = async (allowStale) => {
           try {
-            const data = await host.call('quota.snapshot', currentModel)
+            const data = await host.call('quota.snapshot', { selection: currentModel, allowStale })
             if (active) {
+              if (provider) snapshots.current.set(provider, data)
               setSnap(data)
               setError(null)
             }
@@ -94,13 +99,13 @@ return {
             if (active) setError(String((e && e.message) || e))
           }
         }
-        load()
-        const stopRefresh = ctx.interval(load, 30000)
+        load(true)
+        const stopRefresh = ctx.interval(() => { void load(false) }, 30000)
         return () => {
           active = false
           stopRefresh()
         }
-      }, [currentModel && currentModel.provider, currentModel && currentModel.model])
+      }, [provider])
 
       if (!wide) return null
 
