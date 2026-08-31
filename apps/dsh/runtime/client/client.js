@@ -66,6 +66,15 @@ window.__ModuleLoader__.load({
         '.mq-root{flex:0 0 100%!important;max-width:none!important;order:-1!important;padding:4px 6px!important}',
         '.Nqubda_layer{width:auto!important;margin:0!important}',
         '.Nqubda_badgeLabel{display:none!important}',
+        '.dsh-plugin-empty-layer{position:relative;flex:none;display:flex;align-items:center;width:auto;height:42px;margin:0}',
+        '.dsh-plugin-empty-badge{appearance:none;display:inline-flex;align-items:center;gap:8px;height:42px;margin:0;padding:0 8px;border:0;border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}',
+        '.dsh-plugin-empty-badge:hover,.dsh-plugin-empty-badge[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover)}',
+        '.dsh-plugin-empty-icon{display:block;width:16px;height:16px;flex:none;background:currentColor;-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M6.3 2.2h3.4v2.1h2.1v3.4h-2.1v2.1H6.3V7.7H4.2V4.3h2.1z%27/%3E%3Cpath d=%27M6.3 11.9v1.9M9.7 11.9v1.9M2.2 6h2M11.8 6h2%27/%3E%3C/svg%3E");-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:16px 16px;mask-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M6.3 2.2h3.4v2.1h2.1v3.4h-2.1v2.1H6.3V7.7H4.2V4.3h2.1z%27/%3E%3Cpath d=%27M6.3 11.9v1.9M9.7 11.9v1.9M2.2 6h2M11.8 6h2%27/%3E%3C/svg%3E");mask-position:center;mask-repeat:no-repeat;mask-size:16px 16px}',
+        '.dsh-plugin-empty-count{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;white-space:nowrap}',
+        '.dsh-plugin-empty-panel{position:fixed;z-index:30;width:300px;max-width:calc(100vw - 24px);padding:14px 16px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-inverted);border-radius:12px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
+        '.dsh-plugin-empty-title{margin-bottom:4px;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600}',
+        '.dsh-plugin-empty-rail{width:36px;height:36px}',
+        '.dsh-plugin-empty-rail .dsh-plugin-empty-badge{justify-content:center;width:36px;height:36px;padding:0;border-radius:50%}',
       ].join('')
       document.head.appendChild(style)
       return () => style.remove()
@@ -91,6 +100,63 @@ window.__ModuleLoader__.load({
           for (const row of document.querySelectorAll('.' + className)) row.classList.remove(className)
         }
       }
+    }
+
+    function EmptyPluginAction(props) {
+      const ctx = props.ctx
+      const wide = props.wide !== false
+      const root = React.useRef(null)
+      const [open, setOpen] = React.useState(false)
+      const [anchor, setAnchor] = React.useState(null)
+      const plugins = React.useSyncExternalStore(
+        listener => ctx.dynamicCordisRunner.subscribe(listener),
+        () => ctx.dynamicCordisRunner.getSnapshot(),
+      )
+
+      React.useLayoutEffect(() => {
+        if (!open) return
+        const place = () => {
+          const rect = root.current && root.current.getBoundingClientRect()
+          if (rect) setAnchor({ left: rect.left, bottom: window.innerHeight - rect.top + 8 })
+        }
+        place()
+        window.addEventListener('resize', place)
+        return () => window.removeEventListener('resize', place)
+      }, [open])
+
+      React.useEffect(() => {
+        if (!open) return
+        const closeOutside = event => {
+          if (root.current && !root.current.contains(event.target)) setOpen(false)
+        }
+        document.addEventListener('pointerdown', closeOutside)
+        return () => document.removeEventListener('pointerdown', closeOutside)
+      }, [open])
+
+      if (plugins.length > 0) return null
+      return h('div', {
+        ref: root,
+        className: 'dsh-plugin-empty-layer' + (wide ? '' : ' dsh-plugin-empty-rail'),
+        'data-dsh-plugin-empty': true,
+      }, [
+        open && anchor
+          ? h('section', { key: 'panel', className: 'dsh-plugin-empty-panel', style: anchor }, [
+              h('div', { key: 'title', className: 'dsh-plugin-empty-title' }, 'Hang 的插件'),
+              h('div', { key: 'body' }, '还没有运行中的插件。可在“设置 → Hang 的插件”中启用。'),
+            ])
+          : null,
+        h('button', {
+          key: 'trigger',
+          type: 'button',
+          className: 'dsh-plugin-empty-badge',
+          'aria-label': 'Hang 的插件',
+          'aria-expanded': open,
+          onClick: () => setOpen(value => !value),
+        }, [
+          h('span', { key: 'icon', className: 'dsh-plugin-empty-icon', 'aria-hidden': true }),
+          wide ? h('span', { key: 'count', className: 'dsh-plugin-empty-count' }, '0 running') : null,
+        ]),
+      ])
     }
 
     async function activatePlugins(ctx, activations) {
@@ -344,6 +410,10 @@ window.__ModuleLoader__.load({
         const disposeIcons = installSettingsNavIcons()
         scheduleReconcile()
         const slots = ctx.get('slots')
+        const disposeEmptyPluginAction = slots.inject('sidebar.footer.action', () => slots.register(
+          { name: 'sidebar.footer.action', id: 'dsh-desktop-empty-plugin' },
+          props => h(EmptyPluginAction, { ...props, ctx }),
+        ))
         const disposePlugins = slots.inject('settings.section', () => slots.register(
           { name: 'settings.section', id: 'plugin-store', order: 25, label: 'Hang 的插件' },
           () => h(PluginSection, { ctx }),
@@ -355,6 +425,7 @@ window.__ModuleLoader__.load({
         return () => {
           disposed = true
           if (retryTimer !== null) clearTimeout(retryTimer)
+          if (typeof disposeEmptyPluginAction === 'function') disposeEmptyPluginAction()
           if (typeof disposePlugins === 'function') disposePlugins()
           if (typeof disposeApp === 'function') disposeApp()
           disposeIcons()
