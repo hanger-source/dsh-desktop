@@ -21,8 +21,6 @@ return {
     // 登录编排脚本（普通 Node 环境，可自由 import dsh-weixin-gateway）
     const QR_LOGIN_SCRIPT = [
       'const { startWeixinLoginWithQr, waitForWeixinLogin } = await import("/opt/homebrew/lib/node_modules/dsh-weixin-gateway/lib/weixin/login-qr.js");',
-      'const qrcode = (await import("/opt/homebrew/lib/node_modules/dsh-weixin-gateway/node_modules/qrcode-terminal/index.js") ?? {}).default ?? null;',
-      // 直接使用全局 qrcode 的 PNG 能力依赖 openclaw 全局上下文，回退方案见 execute
       'const phase = process.argv[2];',
       'if (phase === "start") {',
       '  const login = await startWeixinLoginWithQr({ apiBaseUrl: "https://ilinkai.weixin.qq.com", accountId: process.argv[3] || undefined, verbose: false });',
