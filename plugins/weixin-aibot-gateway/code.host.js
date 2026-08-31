@@ -20,16 +20,17 @@ return {
     const NODE = '/usr/bin/env'
     // 登录编排脚本（普通 Node 环境，可自由 import dsh-weixin-gateway）
     const QR_LOGIN_SCRIPT = [
+      // 注意：用 node -e 执行时 argv 无脚本路径，argv[1] = 第一个参数
       'const { startWeixinLoginWithQr, waitForWeixinLogin } = await import("/opt/homebrew/lib/node_modules/dsh-weixin-gateway/lib/weixin/login-qr.js");',
-      'const phase = process.argv[2];',
+      'const phase = process.argv[1];',
       'if (phase === "start") {',
-      '  const login = await startWeixinLoginWithQr({ apiBaseUrl: "https://ilinkai.weixin.qq.com", accountId: process.argv[3] || undefined, verbose: false });',
+      '  const login = await startWeixinLoginWithQr({ apiBaseUrl: "https://ilinkai.weixin.qq.com", accountId: process.argv[2] || undefined, verbose: false });',
       '  if (!login.qrcodeUrl) { console.log(JSON.stringify({ ok: false, message: login.message })); process.exit(0); }',
       '  console.log(JSON.stringify({ ok: true, sessionKey: login.sessionKey, qrcodeUrl: login.qrcodeUrl }));',
       '} else if (phase === "poll") {',
-      '  const login = await waitForWeixinLogin({ sessionKey: process.argv[3], timeoutMs: Number(process.argv[4] || 480000), verbose: false });',
-      '  console.log(JSON.stringify({ ok: true, sessionKey: process.argv[3], ...login }));',
-      '} else { console.log(JSON.stringify({ ok: false, message: "unknown phase" })); }',
+      '  const login = await waitForWeixinLogin({ sessionKey: process.argv[2], timeoutMs: Number(process.argv[3] || 480000), verbose: false });',
+      '  console.log(JSON.stringify({ ok: true, sessionKey: process.argv[2], ...login }));',
+      '} else { console.log(JSON.stringify({ ok: false, message: "unknown phase: " + phase })); }',
     ].join('\n')
 
     // ================= subprocess 工具（quota-monitor 同款） =================
