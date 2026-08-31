@@ -1,0 +1,6 @@
+{
+  "name": "微信 AI 网关",
+  "purpose": "微信 AI 网关管理：扫码登录、网关启停状态、驻守开关可视化界面。连接走 dsh-weixin，本插件只做界面与编排。",
+  "idPrefix": "wxag",
+  "matchPrefix": ["wxag"]
+}
