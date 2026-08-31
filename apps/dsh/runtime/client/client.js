@@ -130,7 +130,7 @@ window.__ModuleLoader__.load({
           const value = await api('/status' + (force ? '?force=1' : ''))
           setState({ loading: false, value, error: null })
         } catch (error) {
-          setState({ loading: false, value: null, error: error.message || String(error) })
+          setState(previous => ({ loading: false, value: previous.value, error: error.message || String(error) }))
         }
       }, [])
 
@@ -156,26 +156,28 @@ window.__ModuleLoader__.load({
         }
       }
 
-      if (state.loading && !state.value) return h('div', { className: 'dsh-desktop-root' }, h('span', { className: 'dsh-desktop-muted' }, '正在检查三个更新域…'))
-      if (state.error) return h('div', { className: 'dsh-desktop-root' }, h('span', { className: 'dsh-desktop-error' }, state.error))
-      const value = state.value
-      const app = value.app
-      const dsh = value.dsh
-      const status = (installed, latest, available, error, emptyLatest = '最新版本未知') => h('div', { className: 'dsh-desktop-row' }, [
-        h('span', null, '当前 ' + (installed || '未知')),
-        h('span', { className: 'dsh-desktop-muted' }, latest ? '最新 ' + latest : emptyLatest),
-        available === true
+      const value = state.value || {}
+      const app = value.app || {}
+      const dsh = value.dsh || {}
+      const status = (installed, latest, available, error) => h('div', { className: 'dsh-desktop-row' }, [
+        installed ? h('span', null, '当前 ' + installed) : null,
+        state.loading
+          ? h('span', { className: 'dsh-desktop-muted' }, '正在检查更新…')
+          : latest && available !== false
+            ? h('span', { className: 'dsh-desktop-muted' }, '最新 ' + latest)
+            : null,
+        !state.loading && available === true
           ? h('span', { className: 'dsh-desktop-warn' }, '有更新')
-          : available === false
+          : !state.loading && (available === false || (!latest && !error && !state.error))
             ? h('span', { className: 'dsh-desktop-ok' }, '已是最新')
             : null,
-        error ? h('span', { className: 'dsh-desktop-error' }, error) : null,
+        !state.loading && error ? h('span', { className: 'dsh-desktop-error' }, error) : null,
       ])
 
       return h('div', { className: 'dsh-desktop-root' }, [
         h('div', { className: 'dsh-desktop-card' }, [
           h('div', { className: 'dsh-desktop-title' }, 'DSH Desktop'),
-          status(app.installed, app.latest, app.updateAvailable, app.error, '尚无 dsh-app-v* 正式发布'),
+          status(app.installed, app.latest, app.updateAvailable, app.error),
           h('div', { className: 'dsh-desktop-row' }, [
             h('button', { className: 'dsh-desktop-btn', disabled: state.loading, onClick: () => load(true) }, state.loading ? '检查中…' : '检查更新'),
             app.updateAvailable
@@ -183,16 +185,17 @@ window.__ModuleLoader__.load({
               : null,
             h('button', { className: 'dsh-desktop-btn', disabled: !nativeControl(), onClick: restart }, '重启 APP'),
           ]),
-          h('div', { className: 'dsh-desktop-muted dsh-desktop-mono' }, app.bundlePath || ''),
+          app.bundlePath ? h('div', { className: 'dsh-desktop-muted dsh-desktop-mono' }, app.bundlePath) : null,
         ]),
         h('div', { className: 'dsh-desktop-card' }, [
           h('div', { className: 'dsh-desktop-title' }, '@deepseek-ai/dsh'),
           status(dsh.installed, dsh.latest, dsh.updateAvailable, dsh.installedError || dsh.latestError),
           h('div', { className: 'dsh-desktop-row' }, [
-            h('button', { className: 'dsh-desktop-btn dsh-desktop-btn-primary', disabled: busy === 'dsh', onClick: updateDsh }, busy === 'dsh' ? '正在更新…' : '更新并重启 APP'),
+            h('button', { className: 'dsh-desktop-btn dsh-desktop-btn-primary', disabled: state.loading || busy === 'dsh', onClick: updateDsh }, busy === 'dsh' ? '正在更新…' : '更新并重启 APP'),
           ]),
           h('div', { className: 'dsh-desktop-muted' }, 'npm 包更新后必须重启 App，新的 dsh 进程才会生效。'),
         ]),
+        state.error ? h('div', { className: 'dsh-desktop-error' }, '检查更新失败：' + state.error) : null,
         message ? h('div', { className: message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-error' }, message.text) : null,
       ])
     }
