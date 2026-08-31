@@ -3,12 +3,25 @@ import AppKit
 import WebKit
 import Foundation
 
-final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler {
     private var window: NSWindow!
     private var webView: WKWebView!
     private var startupPage: StartupPageController!
     private var appliedPageTheme: String?
     private let appUpdateController = AppUpdateController()
+    private lazy var webNavigationController = WebNavigationController(
+        onFinish: { [weak self] webView in
+            webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
+            self?.appendAppearanceLog("navigation=finished")
+        },
+        onFailure: { [weak self] error in
+            self?.startupPage.showStatus(
+                title: "DeepSeek Harness 页面加载失败",
+                detail: error.localizedDescription,
+                isError: true
+            )
+        }
+    )
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
@@ -195,7 +208,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         content.autoresizingMask = [.width, .height]
         webView = WKWebView(frame: content.bounds, configuration: config)
         webView.autoresizingMask = [.width, .height]
-        webView.navigationDelegate = self
+        webView.navigationDelegate = webNavigationController
+        webView.uiDelegate = webNavigationController
         appUpdateController.attach(to: webView)
         startupPage = StartupPageController(webView: webView)
         content.addSubview(webView)
@@ -262,10 +276,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         NSWorkspace.shared.open(URL(string: "https://github.com/hanger-source/dsh-desktop/releases")!)
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
-    }
-
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "dshAppControl" {
             if message.body as? String == "restart" {
@@ -297,10 +307,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
         } else {
             try? line.write(toFile: path, atomically: true, encoding: .utf8)
         }
-    }
-
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
-        startupPage.showStatus(title: "DeepSeek Harness 页面加载失败", detail: error.localizedDescription, isError: true)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
