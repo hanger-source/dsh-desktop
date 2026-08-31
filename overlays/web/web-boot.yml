@@ -13,4 +13,4 @@
       name: __DSH_BOOT_PLUGIN__
 
     - id: dsh-client-bootstrap
-      name: __DSH_CLIENT_BOOTSTRAP__
+      name: '@hanger/dsh-client-bootstrap'

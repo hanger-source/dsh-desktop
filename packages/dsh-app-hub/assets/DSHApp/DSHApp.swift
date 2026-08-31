@@ -145,18 +145,24 @@ final class RuntimeInstaller {
         guard FileManager.default.isReadableFile(atPath: clientBootstrapPath + "/package.json") else {
             throw messageError("插件仓库缺少 dsh-client-bootstrap：\n\(clientBootstrapPath)")
         }
+        let modulePath = Env.dshHome + "/profiles/web/node_modules/@hanger/dsh-client-bootstrap"
+        let moduleParent = (modulePath as NSString).deletingLastPathComponent
+        try FileManager.default.createDirectory(atPath: moduleParent, withIntermediateDirectories: true)
+        if FileManager.default.fileExists(atPath: modulePath) {
+            let resolved = URL(fileURLWithPath: modulePath).resolvingSymlinksInPath().path
+            guard resolved == clientBootstrapPath else {
+                throw messageError("dsh-client-bootstrap 模块入口指向了其他路径：\n\(modulePath)\n→ \(resolved)")
+            }
+        } else {
+            try FileManager.default.createSymbolicLink(atPath: modulePath, withDestinationPath: clientBootstrapPath)
+        }
         let template = try String(contentsOfFile: templatePath, encoding: .utf8)
         guard template.contains("__DSH_BOOT_PLUGIN__") else {
             throw messageError("overlay 模板缺少 __DSH_BOOT_PLUGIN__ 占位符：\n\(templatePath)")
         }
-        guard template.contains("__DSH_CLIENT_BOOTSTRAP__") else {
-            throw messageError("overlay 模板缺少 __DSH_CLIENT_BOOTSTRAP__ 占位符：\n\(templatePath)")
-        }
         try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
         let output = Env.runtimeDir + "/web-boot.generated.yml"
-        let content = template
-            .replacingOccurrences(of: "__DSH_BOOT_PLUGIN__", with: pluginPath)
-            .replacingOccurrences(of: "__DSH_CLIENT_BOOTSTRAP__", with: clientBootstrapPath)
+        let content = template.replacingOccurrences(of: "__DSH_BOOT_PLUGIN__", with: pluginPath)
         try content.write(toFile: output, atomically: true, encoding: .utf8)
         return output
     }
