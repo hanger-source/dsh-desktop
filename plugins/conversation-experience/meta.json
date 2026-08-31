@@ -1,0 +1,6 @@
+{
+  "name": "会话体验",
+  "purpose": "优化终端工具展示和排队消息的多行编辑体验",
+  "idPrefix": "flowui",
+  "matchPrefix": ["flowui"]
+}
