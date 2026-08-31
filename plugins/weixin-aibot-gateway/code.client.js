@@ -149,42 +149,29 @@ return {
       }
 
       return React.createElement('div', { className: 'wxag-root' },
-        // 状态卡
+        // 状态卡：状态徽章 + 开启/关闭 + 重启（同一行）
         React.createElement('div', { className: 'wxag-card' },
           React.createElement('div', { className: 'wxag-title' }, '微信 AI 网关'),
           React.createElement('div', { className: 'wxag-row' },
             React.createElement('span', { className: 'wxag-muted' }, '账号'),
             React.createElement('span', { className: 'wxag-grow wxag-mono' }, accountText),
             React.createElement('span', { className: 'wxag-badge' + (gatewayUp ? ' wxag-badge-on' : '') }, gatewayUp ? '网关运行中' : '网关未运行'),
-          ),
-          status && status.cli
-            ? React.createElement('div', { className: 'wxag-muted' },
-                React.createElement('span', { className: 'wxag-mono' }, status.cli.output.split('\n').slice(0, 4).join(' · ')))
-            : null,
-          error ? React.createElement('div', { className: 'wxag-err' }, error) : null,
-        ),
-
-        // 网关管理卡：启 / 停 / 重启
-        React.createElement('div', { className: 'wxag-card' },
-          React.createElement('div', { className: 'wxag-title' }, '网关管理'),
-          React.createElement('div', { className: 'wxag-row' },
             React.createElement('button', {
               className: 'wxag-btn' + (gatewayUp ? '' : ' wxag-btn-primary'),
               disabled: busy !== null,
-              onClick: () => opGateway('start', '启动'),
-            }, busy === 'start' ? '启动中…' : '启动'),
-            React.createElement('button', {
-              className: 'wxag-btn',
-              disabled: busy !== null || !gatewayUp,
-              onClick: () => opGateway('stop', '停止'),
-            }, busy === 'stop' ? '停止中…' : '停止'),
+              onClick: () => opGateway(gatewayUp ? 'stop' : 'start', gatewayUp ? '关闭' : '开启'),
+            }, busy === 'start' || busy === 'stop' ? '处理中…' : (gatewayUp ? '关闭' : '开启')),
             React.createElement('button', {
               className: 'wxag-btn',
               disabled: busy !== null || !gatewayUp,
               onClick: () => opGateway('restart', '重启'),
             }, busy === 'restart' ? '重启中…' : '重启'),
           ),
-          React.createElement('div', { className: 'wxag-muted' }, '启动/停止/重启 dsh-weixin 微信网关（无需命令行）'),
+          status && status.cli
+            ? React.createElement('div', { className: 'wxag-muted' },
+                React.createElement('span', { className: 'wxag-mono' }, status.cli.output.split('\n').slice(0, 4).join(' · ')))
+            : null,
+          error ? React.createElement('div', { className: 'wxag-err' }, error) : null,
         ),
 
         // 登录卡
