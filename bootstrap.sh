@@ -4,7 +4,7 @@ set -euo pipefail
 
 dsh_home="${DSH_HOME:-$HOME/.dsh}"
 repo="$dsh_home/dsh-desktop"
-remote="https://github.com/hanger-source/dsh-plugins.git"
+remote="https://github.com/hanger-source/dsh-desktop.git"
 
 if [ -d "$repo/.git" ]; then
   git -C "$repo" pull --ff-only

@@ -2,7 +2,7 @@
 # 安装已由 CI 构建的 DSH.app；不在用户机器上重新编译 App。
 set -euo pipefail
 
-release_url="https://github.com/hanger-source/dsh-plugins/releases/latest/download/DSH.dmg"
+release_url="https://github.com/hanger-source/dsh-desktop/releases/latest/download/DSH.dmg"
 applications="$HOME/Applications"
 work="$(mktemp -d "${TMPDIR:-/tmp}/dsh-desktop-install.XXXXXX")"
 mount="$work/mount"

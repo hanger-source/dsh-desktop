@@ -12,7 +12,7 @@ module.exports = {
     const dshHome = process.env.DSH_HOME || Path.join(process.env.HOME, '.dsh')
     const runtimeDir = process.env.DSH_DESKTOP_RUNTIME || Path.join(dshHome, 'runtime', 'dsh-desktop')
     const repoPath = process.env.DSH_DESKTOP_REPO || Path.join(dshHome, 'dsh-desktop')
-    const remote = process.env.DSH_DESKTOP_REMOTE || 'https://github.com/hanger-source/dsh-plugins.git'
+    const remote = process.env.DSH_DESKTOP_REMOTE || 'https://github.com/hanger-source/dsh-desktop.git'
     Fs.mkdirSync(runtimeDir, { recursive: true })
     const logPath = Path.join(runtimeDir, 'app-runtime.log')
     const log = message => {
@@ -25,7 +25,7 @@ module.exports = {
       appBundlePath: process.env.DSH_APP_BUNDLE_PATH,
       dshExecutable: process.env.DSH_EXECUTABLE,
       npmExecutable: process.env.DSH_NPM_EXECUTABLE,
-      repository: process.env.DSH_DESKTOP_GITHUB || 'hanger-source/dsh-plugins',
+      repository: process.env.DSH_DESKTOP_GITHUB || 'hanger-source/dsh-desktop',
       commandEnvironment: process.env,
     })
 

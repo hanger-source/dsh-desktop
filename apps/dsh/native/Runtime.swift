@@ -290,8 +290,8 @@ final class ServerManager {
             environment["DSH_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
             environment["DSH_DESKTOP_REPO"] = Env.desktopRepo
             environment["DSH_DESKTOP_RUNTIME"] = Env.runtimeDir
-            environment["DSH_DESKTOP_REMOTE"] = "https://github.com/hanger-source/dsh-plugins.git"
-            environment["DSH_DESKTOP_GITHUB"] = "hanger-source/dsh-plugins"
+            environment["DSH_DESKTOP_REMOTE"] = "https://github.com/hanger-source/dsh-desktop.git"
+            environment["DSH_DESKTOP_GITHUB"] = "hanger-source/dsh-desktop"
             environment["DSH_APP_VERSION"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
             environment["DSH_APP_BUNDLE_PATH"] = Bundle.main.bundlePath
             environment["DSH_EXECUTABLE"] = launch.dsh

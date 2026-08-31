@@ -256,7 +256,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     @objc private func openReleases(_ sender: Any?) {
-        NSWorkspace.shared.open(URL(string: "https://github.com/hanger-source/dsh-plugins/releases")!)
+        NSWorkspace.shared.open(URL(string: "https://github.com/hanger-source/dsh-desktop/releases")!)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
