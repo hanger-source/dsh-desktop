@@ -18,19 +18,34 @@ return {
     const ACCOUNTS_DIR = '/Users/fuhangbo/.openclaw/openclaw-weixin'
     const ACCOUNTS_INDEX = ACCOUNTS_DIR + '/accounts.json'
     const NODE = '/usr/bin/env'
-    // 登录编排脚本（普通 Node 环境，可自由 import dsh-weixin-gateway）
+    // 登录编排守护（单进程常驻）：
+    //   start 子命令：同一进程内 拿二维码 → 输出 QR JSON → 持续轮询 WAIT_FILE
+    //   直到 connected → saveWeixinAccount 落盘 → 更新 STATE_FILE=connected →
+    //   spawn /opt/homebrew/bin/dsh-weixin run 前台接管收发 → 保持进程存活。
+    //   登录态在 login-qr.js 模块内存 Map 里，跨进程即失效，所以必须单进程。
     const QR_LOGIN_SCRIPT = [
-      // 注意：用 node -e 执行时 argv 无脚本路径，argv[1] = 第一个参数
+      'import { writeFile, readFile } from "node:fs/promises";',
+      'import { spawn } from "node:child_process";',
       'const { startWeixinLoginWithQr, waitForWeixinLogin } = await import("/opt/homebrew/lib/node_modules/dsh-weixin-gateway/lib/weixin/login-qr.js");',
-      'const phase = process.argv[1];',
-      'if (phase === "start") {',
-      '  const login = await startWeixinLoginWithQr({ apiBaseUrl: "https://ilinkai.weixin.qq.com", accountId: process.argv[2] || undefined, verbose: false });',
-      '  if (!login.qrcodeUrl) { console.log(JSON.stringify({ ok: false, message: login.message })); process.exit(0); }',
-      '  console.log(JSON.stringify({ ok: true, sessionKey: login.sessionKey, qrcodeUrl: login.qrcodeUrl }));',
-      '} else if (phase === "poll") {',
-      '  const login = await waitForWeixinLogin({ sessionKey: process.argv[2], timeoutMs: Number(process.argv[3] || 480000), verbose: false });',
-      '  console.log(JSON.stringify({ ok: true, sessionKey: process.argv[2], ...login }));',
-      '} else { console.log(JSON.stringify({ ok: false, message: "unknown phase: " + phase })); }',
+      'const { saveWeixinAccount } = await import("/opt/homebrew/lib/node_modules/dsh-weixin-gateway/lib/weixin/accounts.js");',
+      'const STATE_FILE = process.env.WXAG_STATE_FILE;',
+      'const pending = async (patch) => { try { await writeFile(STATE_FILE, JSON.stringify(patch)); } catch {} };',
+      'const dest = async (key) => { try { return JSON.parse(await readFile(STATE_FILE, "utf8"))[key]; } catch { return undefined; } };',
+      'await pending({ phase: "starting" });',
+      'const login = await startWeixinLoginWithQr({ apiBaseUrl: "https://ilinkai.weixin.qq.com", accountId: process.argv[1] || undefined, verbose: false });',
+      'if (!login.qrcodeUrl) { await pending({ phase: "failed", message: login.message }); process.exit(0); }',
+      'console.log(JSON.stringify({ ok: true, sessionKey: login.sessionKey, qrcodeUrl: login.qrcodeUrl }));',
+      'await pending({ phase: "qr", sessionKey: login.sessionKey, qrcodeUrl: login.qrcodeUrl });',
+      '// 同一进程持续轮询直到扫码成功（登录态在本进程内存，离开即失效）',
+      'let result = await waitForWeixinLogin({ sessionKey: login.sessionKey, timeoutMs: 480000, verbose: false });',
+      'if (result && !result.connected) { await pending({ phase: "failed", message: result.message || "扫码未完成" }); process.exit(0); }',
+      '// 落盘账号 + 刷新微信通道',
+      'try { saveWeixinAccount(result.accountId, { token: result.botToken, baseUrl: result.baseUrl, userId: result.userId }); } catch (e) { await pending({ phase: "failed", message: "落盘失败: " + e.message }); process.exit(0); }',
+      'await pending({ phase: "connected", accountId: result.accountId });',
+      '// 启动 dsh-weixin run（前台长轮询；与 launchd/openclaw 隔离）',
+      'const child = spawn("/opt/homebrew/bin/dsh-weixin", ["run", result.accountId], { stdio: "inherit", detached: false });',
+      'child.on("exit", () => process.exit(0));',
+      'await new Promise(() => {});',
     ].join('\n')
 
     // ================= subprocess 工具（quota-monitor 同款） =================
@@ -48,6 +63,16 @@ return {
         stdout: handle.collected.stdout.readFrom(0).text,
         stderr: handle.collected.stderr.readFrom(0).text,
       }
+    }
+    // spawn 常驻子进程并立即返回（不等待 done）；调用方靠状态文件轮询
+    function spawnDetached(argv, env) {
+      return ctx.subprocess.spawn({
+        argv: argv,
+        cwd: '/',
+        stdio: { stdin: 'ignore', stdout: { maxBytes: 4194304 }, stderr: { maxBytes: 65536 } },
+        graceMs: 60000,
+        env: env,
+      })
     }
     async function readText(file) {
       try {
@@ -130,23 +155,56 @@ return {
     }
 
     // ================= 扫码登录编排 =================
-    async function execQrScript(args) {
-      const r = await run(['/usr/bin/env', 'node', '--input-type=module', '-e', QR_LOGIN_SCRIPT, ...args], { graceMs: 60000, maxBytes: 1048576 })
-      if (r.exitCode !== 0) console.error('[weixin-aibot-gateway] qr script exit=' + r.exitCode + ' stderr=' + r.stderr.slice(0, 300))
-      return r
+    const QR_STATE_FILE = '/tmp/wxag-login-state.json'
+
+    async function readQrState() {
+      try {
+        const target = await ctx.fs.resolve(QR_STATE_FILE)
+        return JSON.parse(await ctx.fs.readText(target))
+      } catch { return { phase: 'idle' } }
+    }
+
+    async function spawnQrDaemon() {
+      // 后台起登录守护：单进程内 二维码→轮询→落盘→跑网关，状态写 QR_STATE_FILE。
+      // spawn 立即返回（不 await done），后续靠状态文件轮询。
+      try {
+        await ctx.fs.writeText(await ctx.fs.resolve(QR_STATE_FILE), JSON.stringify({ phase: 'starting' }))
+      } catch { /* 无所谓 */ }
+      spawnDetached(
+        ['/usr/bin/env', 'node', '--input-type=module', '-e', QR_LOGIN_SCRIPT],
+        { WXAG_STATE_FILE: QR_STATE_FILE, PATH: '/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin' },
+      )
+      // 等第一行 JSON（二维码就位）或失败
+      const deadline = Date.now() + 30000
+      for (;;) {
+        const st = await readQrState()
+        if (st.phase === 'qr') return { ok: true, state: st }
+        if (st.phase === 'failed') return { ok: false, message: st.message }
+        if (Date.now() > deadline) return { ok: false, message: '等待二维码超时' }
+        await ctx.timeout(400)
+      }
     }
 
     async function startLogin() {
-      const r = await execQrScript(['start'])
-      // 解析 stdout 里的 JSON
-      const line = r.stdout.split('\n').map((l) => l.trim()).find((l) => l.startsWith('{'))
-      if (!line) return { error: '扫码启动无输出: ' + r.stdout.slice(0, 200) }
-      let data
-      try { data = JSON.parse(line) } catch { return { error: '扫码启动输出非 JSON: ' + line } }
-      if (!data.ok) return { error: data.message }
-      // 把 qrcodeUrl 渲染成 PNG dataURL（qrcode 全局包，openclaw 依赖内）
-      const png = await renderQrToPng(data.qrcodeUrl)
-      return { sessionKey: data.sessionKey, qrcodeUrl: data.qrcodeUrl, qrcodePng: png, message: '请用手机微信扫描二维码' }
+      // 已有活跃登录 daemon → 直接复用二维码
+      const existing = await readQrState()
+      if (existing && (existing.phase === 'qr' || existing.phase === 'starting')) {
+        const png = await renderQrToPng(existing.qrcodeUrl)
+        return { sessionKey: existing.sessionKey, qrcodeUrl: existing.qrcodeUrl, qrcodePng: png, message: '请用手机微信扫描二维码（续）' }
+      }
+      const qr = await spawnQrDaemon()
+      if (!qr.ok) return { error: qr.message }
+      const png = await renderQrToPng(qr.state.qrcodeUrl)
+      return { sessionKey: qr.state.sessionKey, qrcodeUrl: qr.state.qrcodeUrl, qrcodePng: png, message: '请用手机微信扫描二维码' }
+    }
+
+    async function pollLogin() {
+      const st = await readQrState()
+      if (!st || st.phase === 'connected') {
+        return { connected: true, accountId: st && st.accountId }
+      }
+      if (st && st.phase === 'failed') return { connected: false, message: st.message }
+      return { connected: false, phase: (st && st.phase) || 'idle' }
     }
 
     async function renderQrToPng(content) {
@@ -171,17 +229,6 @@ return {
         console.error('[weixin-aibot-gateway] renderQrToPng: ' + String(err))
         return null
       }
-    }
-
-    async function pollLogin(args) {
-      const sessionKey = args && args.sessionKey
-      if (!sessionKey) return { error: '缺少 sessionKey' }
-      const r = await execQrScript(['poll', sessionKey, String(args.timeoutMs || 480000)])
-      const line = r.stdout.split('\n').map((l) => l.trim()).find((l) => l.startsWith('{'))
-      if (!line) return { connected: false, message: '轮询无输出: ' + r.stdout.slice(0, 200) }
-      try {
-        return JSON.parse(line)
-      } catch { return { connected: false, message: '轮询输出非 JSON: ' + line } }
     }
 
     // ================= 网关启动 =================
