@@ -6,7 +6,7 @@
 //   - 驻守开关：开启/关闭（写 focus.json，headless 钩子共享生效）
 // 全部走 host.call RPC，颜色只用 dsh 主题变量。
 return {
-  inject: ['slots'],
+  inject: ['slots', 'timer'],
   apply(ctx) {
     const slots = ctx.get('slots')
     if (slots === undefined) return
@@ -50,8 +50,8 @@ return {
       }, [])
       React.useEffect(() => {
         void refresh()
-        const t = setTimeout(() => void refresh(), 15000)
-        return () => clearTimeout(t)
+        const stop = ctx.interval(() => void refresh(), 15000)
+        return () => { stop() }
       }, [refresh])
       return { status, error, refresh }
     }
@@ -80,7 +80,7 @@ return {
             setBusy('waiting')
             let connected = false
             for (let i = 0; i < 120; i++) {
-              await new Promise((res) => setTimeout(res, 4000))
+              await ctx.timeout(4000)
               const poll = await host.call('wx.poll', { sessionKey: r.sessionKey, timeoutMs: 45000 }).catch(() => null)
               if (poll && poll.connected) {
                 connected = true
