@@ -8,7 +8,7 @@
   - 窗口先显示动态进度条、持续计时和实时进程日志；本地没有正式全局 `dsh` 时从 npmjs 正式 registry 安装 `@deepseek-ai/dsh@latest`，不继承可能滞后的本机 registry；失败时直接展示安装日志。
   - 等待内置 `bootstrap.sh` 同步插件仓库与技能；失败时展示 bootstrap 日志，不继续加载空页面或旧副本。
   - 根据当前 `DSH_HOME` 生成 overlay，以正式全局 `dsh --profile web --patch <generated-overlay> --no-open` 启动服务，并从日志读取带 token 的 URL 后加载页面。
-  - 编辑菜单（⌘C/⌘V 可用）、刷新页面 ⌘R、退出 ⌘Q；重启服务只通过菜单显式触发，并且只操作 App 自己持有的 dsh 子进程。
+  - 编辑菜单（⌘C/⌘V 可用）、刷新页面 ⌘R / Ctrl-R、退出 ⌘Q；重启服务只通过菜单显式触发，并且只操作 App 自己持有的 dsh 子进程。
   - 标题栏继续跟随 dsh 的浅色、深色或系统外观设置。
   - 若 3080 已被外部服务占用则明确报错，不接管、不清理；App 强杀时由 dsh-boot 的父进程监控关闭服务。
 - **界面**（动态插件提供，设置 → App 页 + 左下角更新浮条）：

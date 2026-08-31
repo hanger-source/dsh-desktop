@@ -380,11 +380,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     private var progressTimer: Timer?
     private var progressStartedAt = Date()
     private var progressLogName: String?
+    private var controlRMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         buildMenu()
         buildWindow()
+        installControlRReload()
         showWindow()
         prepareAndStart()
     }
@@ -480,6 +482,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
     @objc private func reloadPage(_ sender: Any?) {
         webView.reload()
+    }
+
+    private func installControlRReload() {
+        controlRMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            let key = event.charactersIgnoringModifiers?.lowercased()
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard key == "r", modifiers.contains(.control) else { return event }
+            self?.webView.reload()
+            return nil
+        }
     }
 
     private func showProgress(title: String, detail: String, logName: String?) {
@@ -578,7 +590,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
-    func applicationWillTerminate(_ notification: Notification) { ServerManager.shared.stopOwnedServer() }
+    func applicationWillTerminate(_ notification: Notification) {
+        if let controlRMonitor { NSEvent.removeMonitor(controlRMonitor) }
+        ServerManager.shared.stopOwnedServer()
+    }
 }
 
 let appDelegate = AppDelegate()
