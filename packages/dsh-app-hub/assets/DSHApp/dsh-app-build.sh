@@ -13,13 +13,14 @@ ICON_SRC="$WORK"
 
 mkdir -p "$BIN_DIR" "$RS_DIR"
 
-# --- Swift 源码 ---
-# --- Swift 源码：从本脚本同目录的 DSHApp.swift 读取（单一事实来源，改源码不必再改脚本）---
-if [ -f "$SRC_DIR/DSHApp.swift" ]; then
-  cp "$SRC_DIR/DSHApp.swift" "$BIN_DIR/DSHApp.swift"
-else
-  echo "缺少 $SRC_DIR/DSHApp.swift" >&2; exit 1
-fi
+# --- Swift 源码：原生壳按职责拆分，统一从本目录编译 ---
+SWIFT_SOURCES=(DSHApp.swift Runtime.swift DSHWindow.swift StartupPageController.swift)
+for source in "${SWIFT_SOURCES[@]}"; do
+  if [ ! -f "$SRC_DIR/$source" ]; then
+    echo "缺少 $SRC_DIR/$source" >&2; exit 1
+  fi
+  cp "$SRC_DIR/$source" "$BIN_DIR/$source"
+done
 
 if [ -f "$REPO_ROOT/bootstrap.sh" ]; then
   cp "$REPO_ROOT/bootstrap.sh" "$RS_DIR/bootstrap.sh"
@@ -47,8 +48,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 PLIST
 
 # --- 编译 ---
-swiftc -O -swift-version 5 -o "$BIN_DIR/DSHApp" "$BIN_DIR/DSHApp.swift" -framework AppKit -framework WebKit
-rm -f "$BIN_DIR/DSHApp.swift"
+swiftc -O -swift-version 5 -o "$BIN_DIR/DSHApp" \
+  "${SWIFT_SOURCES[@]/#/$BIN_DIR/}" \
+  -framework AppKit -framework WebKit
+for source in "${SWIFT_SOURCES[@]}"; do
+  rm -f "$BIN_DIR/$source"
+done
 
 # --- 图标 ---
 if [ -f "$ICON_SRC/icon-512.png" ]; then
