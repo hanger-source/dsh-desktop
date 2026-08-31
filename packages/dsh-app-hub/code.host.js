@@ -177,21 +177,10 @@ return {
       }
     }
 
-    async function restartApp() {
-      const paths = await resolvePaths()
-      const relaunch = 'sleep 1; /usr/bin/open ' + JSON.stringify(paths.appDir)
-      const command = '/usr/bin/nohup /bin/bash -c ' + JSON.stringify(relaunch) +
-        ' >/dev/null 2>&1 & /usr/bin/osascript -e ' +
-        JSON.stringify('tell application id "com.local.dsh-app" to quit')
-      const res = await runCmd(command, 10000, 4096)
-      return { ok: res.exitCode === 0, detail: res.stderr || res.stdout }
-    }
-
     const launcher = async (args) => {
       const action = args && args.action ? String(args.action) : 'status'
       try {
         if (action === 'status') return { action, ...(await launcherStatus()) }
-        if (action === 'restart') return { action, ...(await restartApp()) }
         return { action, ok: false, detail: 'unknown action: ' + action }
       } catch (e) {
         return { action, ok: false, detail: String((e && e.message) || e) }

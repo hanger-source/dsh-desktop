@@ -128,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
 
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "dshAppearance")
+        config.userContentController.add(self, name: "dshAppControl")
         let themeScript = WKUserScript(
             source: """
             (() => {
@@ -258,6 +259,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKNavigationDelegate, 
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        if message.name == "dshAppControl", message.body as? String == "restart" {
+            restartApplication(nil)
+            return
+        }
         guard message.name == "dshAppearance",
               let theme = message.body as? String,
               theme == "dark" || theme == "light" else { return }

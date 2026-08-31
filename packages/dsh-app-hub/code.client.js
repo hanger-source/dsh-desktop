@@ -66,15 +66,11 @@ return {
         run(setInfo)(call('app-info', { force: true }))
       }
 
-      const act = (action, setBusy, done) => {
-        setBusy(action)
-        call('app-launcher', { action })
-          .then((r) => {
-            if (done) done(r)
-            run(setApp)(call('app-launcher', { action: 'status' }))
-          })
-          .catch((e) => setApp({ loading: false, data: null, error: String((e && e.message) || e) }))
-          .then(() => setBusy(null))
+      const nativeControl = window.webkit && window.webkit.messageHandlers && window.webkit.messageHandlers.dshAppControl
+      const restartApp = () => {
+        if (!nativeControl || working === 'restart') return
+        setWorking('restart')
+        nativeControl.postMessage('restart')
       }
 
       const doUpdate = () => {
@@ -111,7 +107,7 @@ return {
                 ]),
                 h('div', { className: 'dsh-app-row' }, [
                   h('button',
-                    { className: 'dsh-app-btn', onClick: () => act('restart', setWorking), disabled: working === 'restart' || !a.appReady },
+                    { className: 'dsh-app-btn', onClick: restartApp, disabled: working === 'restart' || !a.appReady || !nativeControl },
                     working === 'restart' ? '正在重启…' : '重启 APP'),
                 ]),
                 h('div', { className: 'dsh-app-muted' }, '重启会退出并重新打开整个 DSH.app，包括原生窗口、dsh web 服务和插件宿主。App 路径：' + (a ? a.appDir : '~/Applications/DSH.app')),
