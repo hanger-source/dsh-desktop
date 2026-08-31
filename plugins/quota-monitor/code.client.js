@@ -95,7 +95,7 @@ return {
           }
         }
         load()
-        const stopRefresh = ctx.interval(load, 60000)
+        const stopRefresh = ctx.interval(load, 30000)
         return () => {
           active = false
           stopRefresh()

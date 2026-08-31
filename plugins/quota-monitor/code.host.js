@@ -101,7 +101,7 @@ return {
 
     const cache = new Map()
     const inflight = new Map()
-    const freshFor = entry => entry.ok === false ? 10000 : 60000
+    const freshFor = entry => entry.ok === false ? 10000 : 30000
 
     async function entryFor(provider, source) {
       const key = source.meta.provider
