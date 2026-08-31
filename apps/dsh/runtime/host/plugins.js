@@ -70,6 +70,18 @@ class PluginRepository {
     }
   }
 
+  pluginOrigin(key) {
+    const relative = 'plugins/' + key
+    const upstreamMeta = '@{upstream}:' + relative + '/meta.json'
+    try {
+      const ChildProcess = require('node:child_process')
+      const remote = ChildProcess.spawnSync('/usr/bin/git', ['-C', this.repoPath, 'cat-file', '-e', upstreamMeta])
+      return remote.status === 0 ? 'github' : 'local'
+    } catch (_error) {
+      return 'local'
+    }
+  }
+
   sources() {
     const root = Path.join(this.repoPath, 'plugins')
     if (!Fs.existsSync(root)) return []
@@ -91,7 +103,7 @@ class PluginRepository {
       const host = Fs.existsSync(hostPath) ? Fs.readFileSync(hostPath, 'utf8') : ''
       const client = Fs.existsSync(clientPath) ? Fs.readFileSync(clientPath, 'utf8') : ''
       if (!host && !client) continue
-      sources.push({ key, meta, host, client })
+      sources.push({ key, meta, host, client, origin: this.pluginOrigin(key) })
     }
     return sources
   }
@@ -197,6 +209,7 @@ class PluginRepository {
         key: source.key,
         name: source.meta.name || source.key,
         purpose: source.meta.purpose || '',
+        origin: source.origin,
         pluginId: plugin ? plugin.pluginId : null,
         state: this.disabled.has(source.key)
           ? 'disabled'

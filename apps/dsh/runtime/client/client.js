@@ -50,6 +50,7 @@ window.__ModuleLoader__.load({
         '.dsh-desktop-btn:disabled{opacity:.5;cursor:default}',
         '.dsh-desktop-badge{flex:none;padding:1px 8px;border-radius:999px;font-size:11px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}',
         '.dsh-desktop-badge-on{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}',
+        '.dsh-plugin-origin-local{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
         '.dsh-plugin-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
         '.dsh-plugin-name{font-weight:600;color:var(--dsw-alias-label-primary)}',
         '.dsh-plugin-purpose{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-tertiary)}',
@@ -369,6 +370,9 @@ window.__ModuleLoader__.load({
             : (disabled ? '已停用' : (failed ? '运行失败' : (plugin.state === 'ready' ? '待启用' : '未运行')))
           return h('div', { key: plugin.key, className: 'dsh-plugin-item', style: { flexWrap: 'wrap' } }, [
             h('span', { className: 'dsh-plugin-name' }, plugin.name),
+            plugin.origin === 'local'
+              ? h('span', { className: 'dsh-desktop-badge dsh-plugin-origin-local' }, '本地')
+              : null,
             h('span', { className: 'dsh-plugin-purpose' }, plugin.purpose),
             h('span', { className: 'dsh-desktop-badge' + (running ? ' dsh-desktop-badge-on' : '') }, stateText),
             h('button', { className: 'dsh-desktop-btn', disabled: busy !== null, onClick: () => toggle(plugin) }, busy === plugin.key ? '处理中…' : (running ? '停用' : (failed ? '重试' : '启用'))),
