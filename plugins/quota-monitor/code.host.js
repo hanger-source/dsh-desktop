@@ -71,7 +71,7 @@ return {
       }
     }
 
-    // key = 模型 provider 名（agentDefaultModel.currentSelection().provider），别名覆盖实际命名差异
+    // key = 当前会话模型选择的 provider 名，别名覆盖实际命名差异
     const SOURCES = {
       'opencode-go': { settingsNs: 'llm-pi-ai', fetch: fetchOpencodeGo, meta: { provider: 'opencode-go', kind: 'subscription', displayName: 'OpenCode Go' } },
       'deepseek': { settingsNs: 'llm-deepseek', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
@@ -99,25 +99,11 @@ return {
       }
     }
 
-    function currentModel() {
-      let current = null
-      const modelService = ctx.get('agentDefaultModel')
-      if (modelService !== undefined) {
-        try {
-          const sel = modelService.currentSelection()
-          current = sel ? { provider: sel.provider, model: sel.model } : null
-        } catch (e) {
-          console.error('[quota] 读取当前模型失败：', e)
-        }
-      }
-      return current
-    }
-
-    harness.handle('quota.selection', () => currentModel())
-
-    harness.handle('quota.snapshot', async () => {
+    harness.handle('quota.snapshot', async (selection) => {
       // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
-      const current = currentModel()
+      const current = selection && typeof selection.provider === 'string'
+        ? { provider: selection.provider, model: String(selection.model || '') }
+        : null
       const entries = []
       const source = current && SOURCES[current.provider]
       if (source) {

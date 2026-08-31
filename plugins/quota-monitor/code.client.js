@@ -5,7 +5,7 @@
 // 运行效果：侧边栏底部「插件/用量/设置」三行中的用量面板，
 // OpenCode Go 名称加粗并与更新时间同行，小时/本周/本月逐行排布，剩余倒计时无"后重置"字样。
 return {
-  inject: ['slots', 'timer', 'remote'],
+  inject: ['slots', 'timer', 'sessions', 'modelDirectories'],
   apply(ctx) {
     // 让 footerActions 容器可换行：cordis 插件按钮独占第一行，用量面板第二行，设置第三行。
     styles.insert('\n' +
@@ -60,19 +60,33 @@ return {
       return typeof v === 'number' ? v + '%' : '—'
     }
 
+    function useCurrentModel() {
+      const sessionId = React.useSyncExternalStore(
+        listener => ctx.sessions.list.subscribe(listener),
+        () => ctx.sessions.list.getSnapshot().current,
+      )
+      const directory = React.useMemo(
+        () => sessionId === undefined ? null : ctx.modelDirectories.directoryFor(sessionId),
+        [sessionId],
+      )
+      return React.useSyncExternalStore(
+        listener => directory === null ? () => {} : directory.store.subscribe(listener),
+        () => directory === null ? null : directory.store.getSnapshot().current,
+      )
+    }
+
     function QuotaSide(props) {
       const wide = props && props.wide !== false
+      const currentModel = useCurrentModel()
       const [snap, setSnap] = React.useState(null)
       const [error, setError] = React.useState(null)
-      const selectionKey = React.useRef(null)
 
       React.useEffect(() => {
         let active = true
         const load = async () => {
           try {
-            const data = await host.call('quota.snapshot')
+            const data = await host.call('quota.snapshot', currentModel)
             if (active) {
-              selectionKey.current = JSON.stringify(data && data.current)
               setSnap(data)
               setError(null)
             }
@@ -82,22 +96,11 @@ return {
         }
         load()
         const stopRefresh = ctx.interval(load, 60000)
-        const checkSelection = async () => {
-          try {
-            const current = await host.call('quota.selection')
-            const nextKey = JSON.stringify(current)
-            if (selectionKey.current !== null && selectionKey.current !== nextKey) await load()
-          } catch (e) {
-            if (active) setError(String((e && e.message) || e))
-          }
-        }
-        const stopSelection = ctx.remote.$on('settings/document-updated', () => { void checkSelection() })
         return () => {
           active = false
           stopRefresh()
-          stopSelection()
         }
-      }, [])
+      }, [currentModel && currentModel.provider, currentModel && currentModel.model])
 
       if (!wide) return null
 
