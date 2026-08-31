@@ -17,7 +17,9 @@ return {
       '.mq-row{display:flex;align-items:center;gap:8px;white-space:nowrap}' +
       '.mq-label{flex:none;width:52px;color:var(--dsw-alias-label-tertiary);font-size:11px}' +
       '.mq-pct{flex:none;min-width:36px;font-variant-numeric:tabular-nums;color:var(--dsw-alias-label-primary);font-weight:600;font-size:12px}' +
-      '.mq-balance{margin-left:auto;text-align:right}' +
+      '.mq-balance-row{justify-content:flex-end}' +
+      '.mq-balance-row .mq-label{width:auto}' +
+      '.mq-balance{text-align:right}' +
       '.mq-bar{width:44px;height:3px;border-radius:999px;background:var(--dsw-alias-bg-layer-2);overflow:hidden;flex:none}' +
       '.mq-fill{display:block;height:100%;border-radius:inherit;background:var(--dsw-alias-brand-primary)}' +
       '.mq-fill-warn{background:var(--dsw-alias-state-warn-primary)}' +
@@ -141,7 +143,7 @@ return {
       if (e.kind === 'prepaid') {
         const detail = '总余额 ' + fmtCurrency(e.currency) + ' ' + fmtMoney(e.total) +
           '（充值 ' + fmtMoney(e.toppedUp) + ' / 赠送 ' + fmtMoney(e.granted) + '）'
-        body.push(React.createElement('div', { key: 'balance', className: 'mq-row', title: detail },
+        body.push(React.createElement('div', { key: 'balance', className: 'mq-row mq-balance-row', title: detail },
           React.createElement('span', { className: 'mq-label' }, '余额'),
           React.createElement('span', { className: 'mq-pct mq-balance' }, fmtCurrency(e.currency) + ' ' + fmtMoney(e.total))))
       } else if (e.kind === 'subscription' && e.buckets) {
