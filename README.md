@@ -5,45 +5,44 @@
 
 ## 链路总览（打开 DSH.app 之后发生的事）
 
-1. **DSH.app（Swift 壳）** 立即显示可交互的启动页，并直接运行 `~/projects/deepseek-harness/apps/cli/lib/bin.js`；可用 `DSH_SOURCE_ROOT` 明确指定另一个 checkout。壳不在后台安装 npm 包。
-2. App 构建时把 `packages/`、`dsh-boot.js` 和 overlay 模板打进 Resources；运行时生成含真实绝对路径的 overlay，再以 `node <cli> --profile web --patch <generated-overlay> --no-open` 拉起端口 3080：
+1. **DSH.app（Swift 壳）** 检查本机是否装了 `dsh`：没有则 `npm install -g @deepseek-ai/dsh@latest`，有则直接用（不做版本比对/自动升级）。
+2. 以 `dsh --profile web --patch overlays/web/web-boot.yml --no-open` 拉起服务（端口 3080）。`web-boot.yml` 是 App 专属 overlay（手动 `dsh web` 不加载）：
    - `openBrowser: false`（`--no-open` 在 `--profile` 模式下会被 dsh CLI 忽略，必须从配置层关，否则每次启动弹浏览器）；
    - `insert:` 注入 **dsh-boot** 宿主引导插件。
-3. 壳等待服务输出带 token 的真实启动 URL；成功后 WKWebView 才导航，失败则在同一窗口显示 `server.log` 尾部，不弹阻塞 modal、不留下空白窗口。
-4. 页面可用后，后台执行 App 内置的 `bootstrap.sh`：clone/pull 本仓库到 `~/.dsh/hang-plugins`，再同步 `skills/`；网络失败不影响本次随 App 打包的插件快照。
-5. **dsh-boot 插件** 监听 `agent/created`，自动把 App Resources 中带 UI 的插件 define + run 启用（幂等：每个包进程内只启用一次，多次 agent/created 不重复定义）：
-   - `dsh-app-hub`（设置 → App 页）
+3. 后台执行 `bootstrap.sh`：clone/pull 本仓库到 `~/.dsh/hang-plugins` → 同步 `skills/` 到 `~/.dsh/skills/` → 调 `install.sh`（构建/更新 `~/Applications/DSH.app` 壳 + 装技能）。
+4. **dsh-boot 插件** 监听 `agent/created`，自动把 `packages/` 下带 UI 的插件 define + run 启用（幂等：每个包进程内只启用一次，多次 agent/created 不重复定义）：
+   - `dsh-app-hub`（设置 → App 页 + 左下角更新条）
    - `hang-plugins`（设置 → Hang 的插件管理器）
    - `quota-monitor`（侧边栏底部用量/余额）
-6. **⌘Q 退出**：App 只向自己拉起的 dsh web 发送 `SIGTERM`，不清理外部占用 3080 的进程；App 异常退出时，dsh-boot 通过 `DSH_PARENT_PID` 检测父进程消失并关闭服务。
+5. **⌘Q 退出**：App 的 `killPort` 关闭 3080 服务 —— 先 `SIGTERM` 自己拉起的 dsh web 进程（Darwin 函数，零子进程），再用 lsof（输出走临时文件，不用管道 `readDataToEndOfFile`，避免 lsof 子进程残留 FD 导致退出卡死）兜底清理监听 3080 的残留进程。
 
 ## 目录结构
 
 ```
-bootstrap.sh                # 页面可用后执行的同步：拉仓库 + 同步技能 + 调 install.sh
+bootstrap.sh                # App 后台执行的冷启动引导：拉仓库 + 同步技能 + 调 install.sh
 install.sh                  # 构建/更新 DSH.app 壳 + 安装技能（不再安装 agent-preset）
 launch-web.sh               # 手动启动 dsh web（同样带 web-boot.yml overlay）
-overlays/web/web-boot.yml   # overlay 模板：构建进 App，运行时替换 dsh-boot 绝对路径
+overlays/web/web-boot.yml   # App 专属 overlay：openBrowser:false + insert 注入 dsh-boot
 overlays/web/plugins/dsh-boot.js  # dsh-boot：agent/created 自动启用 UI 插件 + /api/dsh-plugins/enable 端点
 packages/<name>/            # 每个插件：code.host.js / code.client.js / README.md（最新版一份）
-  ├── dsh-app-hub/          # 设置 → App 页（生成壳、本地源码运行时状态）；assets/DSHApp/ 持壳源码与构建脚本
+  ├── dsh-app-hub/          # 设置 → App 页（生成壳、版本、更新 dsh、重启服务）+ 左下角更新条；assets/DSHApp/ 持壳源码与构建脚本
   ├── hang-plugins/         # 设置 → Hang 的插件管理器
   └── quota-monitor/        # 侧边栏底部用量/余额监视
 skills/                     # 仓库自带技能（dsh-plugin-install / dsh-plugin-dev 等），bootstrap 同步到 ~/.dsh/skills/
 ```
 
-## 运行时边界
+## 与官方的关系（无冲突）
 
-- dsh 运行时唯一来自本机 `deepseek-harness` checkout 的已构建 CLI；DSH.app 不读全局 npm 安装。
-- 插件运行快照来自 DSH.app 的 Resources；`~/.dsh/hang-plugins` 是后台同步副本和技能来源，不是首屏启动前提。
+- 官方部署目录：`/opt/homebrew/lib/node_modules/@deepseek-ai/dsh/`，升级整目录替换。
+- 本仓库本机副本：`~/.dsh/hang-plugins`（用户数据目录，官方升级不触碰）。
 - 插件以动态会话插件运行，`pluginId` 由系统分配，不与官方包重名。
-- dsh-boot 经 profile 的生成 overlay（`insert:` 语法）注入，只进 DSH.app 启动的 web profile。
+- dsh-boot 经 profile 的 `--patch overlay`（`insert:` 语法）注入，只进本机 web profile，不改官方安装。
 
 ## 当前插件
 
 | 插件 | 说明 |
 |---|---|
-| `dsh-app-hub` | 设置 → App 页（DSH.app 生成/重建、本地源码运行时路径/版本/commit） |
+| `dsh-app-hub` | 设置 → App 页（DSH.app 生成/重建、版本检查、更新 dsh、重启服务）+ 左下角新版本浮条 |
 | `hang-plugins` | 设置 → Hang 的插件管理器（同步仓库、列出插件、启用引导） |
 | `quota-monitor` | 侧边栏底部用量/余额监视（OpenCode Go 订阅 + DeepSeek 官方余额，按当前模型 provider 匹配） |
 
@@ -55,7 +54,6 @@ skills/                     # 仓库自带技能（dsh-plugin-install / dsh-plug
 - **打 tag**：`git tag v0.1.0 && git push origin v0.1.0` → 自动构建并发布到该 tag 的 Release。
 - 下载地址：仓库 Releases 页（如 https://github.com/hanger-source/dsh-plugins/releases ）。
 - **首次打开**：因 ad-hoc 签名，需右键 DSH.app → 打开（Gatekeeper 拦一次）。
-- **运行前提**：本机已有完成构建的 `~/projects/deepseek-harness` checkout，或启动 App 时设置 `DSH_SOURCE_ROOT`。
 
 ## 手动启用 / 更新插件
 

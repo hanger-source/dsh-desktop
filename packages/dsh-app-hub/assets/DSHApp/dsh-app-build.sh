@@ -14,21 +14,11 @@ mkdir -p "$BIN_DIR" "$RS_DIR"
 # --- Swift 源码 ---
 # --- Swift 源码：从本脚本同目录的 DSHApp.swift 读取（单一事实来源，改源码不必再改脚本）---
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
-REPO_ROOT="$(cd "$SRC_DIR/../../../.." && pwd)"
 if [ -f "$SRC_DIR/DSHApp.swift" ]; then
   cp "$SRC_DIR/DSHApp.swift" "$BIN_DIR/DSHApp.swift"
 else
   echo "缺少 $SRC_DIR/DSHApp.swift" >&2; exit 1
 fi
-
-# --- 启动资源：App 使用构建时的插件快照，不在首屏前等待网络 clone/pull ---
-PLUGIN_RS="$RS_DIR/dsh-plugins"
-mkdir -p "$PLUGIN_RS/overlays/web/plugins"
-cp -R "$REPO_ROOT/packages" "$PLUGIN_RS/"
-cp "$REPO_ROOT/overlays/web/web-boot.yml" "$PLUGIN_RS/overlays/web/web-boot.yml"
-cp "$REPO_ROOT/overlays/web/plugins/dsh-boot.js" "$PLUGIN_RS/overlays/web/plugins/dsh-boot.js"
-cp "$REPO_ROOT/bootstrap.sh" "$RS_DIR/bootstrap.sh"
-chmod +x "$RS_DIR/bootstrap.sh"
 
 # --- Info.plist ---
 cat > "$APP/Contents/Info.plist" <<'PLIST'

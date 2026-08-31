@@ -7,11 +7,10 @@ return {
   inject: ['subprocess'],
   async apply(ctx) {
     const homeRaw = await runBash('printf "%s" "${DSH_HOME:-$HOME/.dsh}"')
-    const home = (homeRaw.out || '').trim()
-    if (!home) throw new Error('无法解析 DSH_HOME')
+    const home = (homeRaw.out || '').trim() || '/Users/fuhangbo/.dsh'
     const REPO = home + '/hang-plugins'
     const REMOTE = 'https://github.com/hanger-source/dsh-plugins.git'
-    const HOME = home
+    const HOME = '/Users/fuhangbo/.dsh'
 
     async function runBash(script) {
       const handle = ctx.subprocess.spawn({

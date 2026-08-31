@@ -9,4 +9,4 @@
 
 - insert:
     - id: dsh-boot
-      name: __DSH_BOOT_PLUGIN__
+      name: /Users/fuhangbo/.dsh/hang-plugins/overlays/web/plugins/dsh-boot.js
