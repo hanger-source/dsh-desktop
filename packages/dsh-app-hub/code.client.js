@@ -106,18 +106,15 @@ return {
             ? h('div', { className: 'dsh-app-err' }, '状态获取失败：' + app.error)
             : [
                 h('div', { className: 'dsh-app-row' }, [
-                  h('span', null, '启动器 ' + (a.appReady ? '已生成' : '未生成')),
+                  h('span', null, 'DSH.app ' + (a.appReady ? '已安装' : '未安装')),
                   h('span', null, ['服务端口 ' + a.port + ' ', a.portUp ? h('span', { className: 'dsh-app-ok' }, '运行中') : h('span', { className: 'dsh-app-new' }, '未运行')]),
                 ]),
                 h('div', { className: 'dsh-app-row' }, [
                   h('button',
-                    { className: 'dsh-app-btn', onClick: () => act('create', setWorking), disabled: working === 'create' },
-                    working === 'create' ? '生成中…' : (a && a.appReady ? '重新生成 DSH.app' : '生成 DSH.app')),
-                  h('button',
-                    { className: 'dsh-app-btn', onClick: () => act('launch', setWorking), disabled: working === 'launch' },
-                    working === 'launch' ? '打开中…' : '打开 DSH'),
+                    { className: 'dsh-app-btn', onClick: () => act('restart', setWorking), disabled: working === 'restart' || !a.appReady },
+                    working === 'restart' ? '正在重启…' : '重启 APP'),
                 ]),
-                h('div', { className: 'dsh-app-muted' }, '「打开 DSH」由原生 App 持有 dsh web（端口 ' + (a ? a.port : 3080) + '）的启动、重启和退出；重启请使用 DSH 菜单。App 路径：' + (a ? a.appDir : '~/Applications/DSH.app')),
+                h('div', { className: 'dsh-app-muted' }, '重启会退出并重新打开整个 DSH.app，包括原生窗口、dsh web 服务和插件宿主。App 路径：' + (a ? a.appDir : '~/Applications/DSH.app')),
               ],
       ])
 
