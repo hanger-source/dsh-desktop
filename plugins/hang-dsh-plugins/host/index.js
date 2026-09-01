@@ -65,10 +65,10 @@ module.exports = {
       }), 'hang-dsh-plugins: ' + path)
     }
 
-    route('/api/dsh-desktop/status', ['GET'], request => {
-      const url = new URL(request.url, 'http://localhost')
-      return versions.status(url.searchParams.get('force') === '1')
-    })
+    route('/api/dsh-desktop/status', ['GET'], () => versions.status())
+    route('/api/dsh-desktop/status/app', ['GET'], () => versions.checkApp())
+    route('/api/dsh-desktop/status/plugin-manager', ['GET'], () => versions.checkPluginManager())
+    route('/api/dsh-desktop/status/dsh', ['GET'], () => versions.checkDsh())
     route('/api/dsh-desktop/dsh/update', ['POST'], () => versions.updateDsh())
     route('/api/dsh-desktop/plugins', ['GET'], request => {
       const url = new URL(request.url, 'http://localhost')

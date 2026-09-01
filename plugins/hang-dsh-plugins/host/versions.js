@@ -1,5 +1,6 @@
 'use strict'
 
+const Fs = require('node:fs')
 const Path = require('node:path')
 const { requestJson, requestText, run } = require('./process.js')
 
@@ -37,6 +38,28 @@ function compareVersions(left, right) {
   return 0
 }
 
+function installedPackageVersion(executable, packageName) {
+  if (!executable) return { version: null, error: 'DSH App 没有传入 dsh 可执行文件' }
+  try {
+    let directory = Path.dirname(Fs.realpathSync(executable))
+    for (let depth = 0; depth < 8; depth += 1) {
+      const manifestPath = Path.join(directory, 'package.json')
+      if (Fs.existsSync(manifestPath)) {
+        const manifest = JSON.parse(Fs.readFileSync(manifestPath, 'utf8'))
+        if (manifest.name === packageName) {
+          return { version: normalizeVersion(manifest.version), error: null }
+        }
+      }
+      const parent = Path.dirname(directory)
+      if (parent === directory) break
+      directory = parent
+    }
+    return { version: null, error: '找不到 ' + packageName + ' 的 package.json' }
+  } catch (error) {
+    return { version: null, error: error.message || String(error) }
+  }
+}
+
 class VersionService {
   constructor(options) {
     this.appVersion = normalizeVersion(options.appVersion) || '0.0.0'
@@ -46,25 +69,64 @@ class VersionService {
     this.npmExecutable = options.npmExecutable
     this.repository = options.repository
     this.commandEnvironment = options.commandEnvironment
-    this.cache = null
-    this.cacheAt = 0
+    this.cache = {}
+    this.cacheAt = {}
   }
 
-  async status(force = false) {
-    if (!force && this.cache && Date.now() - this.cacheAt < 5 * 60_000) return this.cache
-    const [app, pluginManager, dsh] = await Promise.all([
-      this.appStatus(),
-      this.pluginManagerStatus(),
-      this.dshStatus(),
-    ])
-    this.cache = {
-      app,
-      pluginManager,
-      dsh,
-      checkedAt: new Date().toISOString(),
+  cached(key) {
+    return this.cache[key] && Date.now() - (this.cacheAt[key] || 0) < 5 * 60_000
+      ? this.cache[key]
+      : null
+  }
+
+  remember(key, value) {
+    this.cache[key] = value
+    this.cacheAt[key] = Date.now()
+    return value
+  }
+
+  async status() {
+    return {
+      app: this.cached('app') || this.localAppStatus(),
+      pluginManager: this.cached('pluginManager') || this.localPluginManagerStatus(),
+      dsh: this.cached('dsh') || await this.dshStatus(false),
     }
-    this.cacheAt = Date.now()
-    return this.cache
+  }
+
+  async checkApp() {
+    return this.remember('app', await this.appStatus())
+  }
+
+  async checkPluginManager() {
+    return this.remember('pluginManager', await this.pluginManagerStatus())
+  }
+
+  async checkDsh() {
+    return this.remember('dsh', await this.dshStatus(true))
+  }
+
+  localPluginManagerStatus() {
+    return {
+      installed: this.pluginManagerVersion,
+      latest: null,
+      updateAvailable: null,
+      enabled: true,
+      managedByApp: true,
+      error: null,
+    }
+  }
+
+  localAppStatus() {
+    return {
+      installed: this.appVersion,
+      latest: null,
+      updateAvailable: null,
+      releaseUrl: 'https://github.com/' + this.repository + '/releases',
+      assetUrl: null,
+      checksumUrl: null,
+      bundlePath: this.appBundlePath,
+      error: null,
+    }
   }
 
   async pluginManagerStatus() {
@@ -137,31 +199,19 @@ class VersionService {
     }
   }
 
-  async dshStatus() {
-    let installed = null
+  async dshStatus(checkLatest = true) {
+    const local = installedPackageVersion(this.dshExecutable, '@deepseek-ai/dsh')
+    const installed = local.version
     let latest = null
-    let installedError = null
+    const installedError = local.error
     let latestError = null
-    if (this.dshExecutable) {
+    if (checkLatest) {
       try {
-        const result = await run(this.dshExecutable, ['--version'], {
-          env: this.commandEnvironment,
-          timeoutMs: 10_000,
-          maxBytes: 16_384,
-        })
-        installed = result.exitCode === 0 ? normalizeVersion(result.stdout || result.stderr) : null
-        if (result.exitCode !== 0) installedError = (result.stderr || result.stdout || 'exit ' + result.exitCode).trim()
+        const metadata = await requestJson('https://registry.npmjs.org/@deepseek-ai/dsh/latest')
+        latest = normalizeVersion(metadata && metadata.version)
       } catch (caught) {
-        installedError = caught.message
+        latestError = caught.message
       }
-    } else {
-      installedError = 'DSH App 没有传入 dsh 可执行文件'
-    }
-    try {
-      const metadata = await requestJson('https://registry.npmjs.org/@deepseek-ai/dsh/latest')
-      latest = normalizeVersion(metadata && metadata.version)
-    } catch (caught) {
-      latestError = caught.message
     }
     const compared = installed && latest ? compareVersions(installed, latest) : null
     return {
@@ -188,7 +238,8 @@ class VersionService {
     if (result.exitCode !== 0) {
       throw new Error((result.stderr || result.stdout || 'npm exit ' + result.exitCode).trim())
     }
-    this.cache = null
+    delete this.cache.dsh
+    delete this.cacheAt.dsh
     return { ok: true, requiresRestart: true, output: (result.stdout || result.stderr).trim().slice(-4000) }
   }
 }

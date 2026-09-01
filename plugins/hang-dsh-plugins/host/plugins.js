@@ -162,8 +162,8 @@ class ProfilePluginRepository {
     return this.releaseCache
   }
 
-  async list(force = false) {
-    const releases = await this.releases(force)
+  async list(checkRemote = false) {
+    const releases = checkRemote ? await this.releases(true) : this.releaseCache
     const manifest = this.manifest()
     const state = this.state()
     const dependencies = manifest.dependencies || {}
@@ -174,8 +174,8 @@ class ProfilePluginRepository {
         const installedVersion = installed ? this.installedVersion(plugin.package) : null
         const remembered = state.channels && state.channels[plugin.key]
         const requestedChannel = remembered || (installedVersion && installedVersion.includes('-') ? 'beta' : 'stable')
-        const release = releases[plugin.key] || { stable: null, beta: null }
-        const channel = release[requestedChannel] ? requestedChannel : (release.stable ? 'stable' : 'beta')
+        const release = releases?.[plugin.key] || { stable: null, beta: null }
+        const channel = requestedChannel
         const selected = release[channel]
         return {
           ...plugin,
@@ -188,7 +188,7 @@ class ProfilePluginRepository {
           releases: release,
         }
       }),
-      checkedAt: new Date().toISOString(),
+      checkedAt: releases ? new Date().toISOString() : null,
     }
   }
 
