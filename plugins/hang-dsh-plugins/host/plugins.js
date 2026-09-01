@@ -70,9 +70,9 @@ class ProfilePluginRepository {
   state() {
     try {
       const value = JSON.parse(Fs.readFileSync(this.statePath, 'utf8'))
-      return value && typeof value === 'object' ? value : { channels: {} }
+      return value && typeof value === 'object' ? value : { channels: {}, enabled: {} }
     } catch (_error) {
-      return { channels: {} }
+      return { channels: {}, enabled: {} }
     }
   }
 
@@ -90,6 +90,30 @@ class ProfilePluginRepository {
     } catch (_error) {
       return null
     }
+  }
+
+  reconcileActivation(state = this.state()) {
+    const manifestPath = Path.join(this.profileDir, 'package.json')
+    const manifest = this.manifest()
+    manifest.dsh = manifest.dsh || {}
+    manifest.dsh.profile = manifest.dsh.profile || {}
+    const before = manifest.dsh.profile.bundles || []
+    const bundles = before.filter(packageName => {
+      const plugin = CATALOG.plugins.find(row => row.package === packageName)
+      return !plugin || state.enabled?.[plugin.key] !== false
+    })
+    for (const plugin of CATALOG.plugins) {
+      if (state.enabled?.[plugin.key] === true && !bundles.includes(plugin.package)) {
+        bundles.push(plugin.package)
+      }
+    }
+    if (JSON.stringify(before) === JSON.stringify(bundles)) return { changed: false, bundles }
+    manifest.dsh.profile.bundles = bundles
+    const temporary = manifestPath + '.tmp'
+    Fs.writeFileSync(temporary, JSON.stringify(manifest, null, 2) + '\n')
+    Fs.renameSync(temporary, manifestPath)
+    this.log('[plugins] reconciled activation: ' + bundles.join(', '))
+    return { changed: true, bundles }
   }
 
   async releases(force = false) {
@@ -178,32 +202,47 @@ class ProfilePluginRepository {
     if (this.running) throw new Error('已有插件操作正在进行')
     const plugin = CATALOG.plugins.find(row => row.key === key)
     if (!plugin) throw new Error('没有这个插件：' + key)
-    if (!['install', 'update', 'remove'].includes(action)) throw new Error('无效操作：' + action)
-    if (action !== 'remove' && !['stable', 'beta'].includes(channel)) throw new Error('无效频道：' + channel)
+    if (!['update', 'enable', 'disable'].includes(action)) throw new Error('无效操作：' + action)
+    if (action !== 'disable' && !['stable', 'beta'].includes(channel)) throw new Error('无效频道：' + channel)
     this.running = this.performMutation(plugin, action, channel).finally(() => { this.running = null })
     return this.running
   }
 
   async performMutation(plugin, action, channel) {
-    const release = action === 'remove'
-      ? null
-      : (await this.releases(true))[plugin.key]?.[channel]
-    const args = action === 'remove'
-      ? ['plugin', '--profile', PROFILE, 'remove', plugin.package]
-      : ['plugin', '--profile', PROFILE, 'add', this.spec(plugin, release), '--save-exact']
-    const result = await run(this.dshExecutable, args, {
-      env: this.commandEnvironment,
-      cwd: this.sourceRoot || Os.homedir(),
-      timeoutMs: 5 * 60_000,
-      maxBytes: 512 * 1024,
-    })
-    if (result.exitCode !== 0) {
-      throw new Error((result.stderr || result.stdout || 'dsh plugin exit ' + result.exitCode).trim())
-    }
-    if (action !== 'remove') {
-      const state = this.state()
-      state.channels = { ...(state.channels || {}), [plugin.key]: channel }
+    const manifest = this.manifest()
+    const installed = Object.hasOwn(manifest.dependencies || {}, plugin.package)
+    const wasEnabled = installed && new Set(manifest.dsh?.profile?.bundles || []).has(plugin.package)
+    const state = this.state()
+
+    if (action === 'disable') {
+      state.enabled = { ...(state.enabled || {}), [plugin.key]: false }
       this.writeState(state)
+      this.reconcileActivation(state)
+    } else {
+      const release = (await this.releases(true))[plugin.key]?.[channel]
+      const mustInstall = action === 'update' || !installed || state.channels?.[plugin.key] !== channel
+      if (mustInstall) {
+        const result = await run(this.dshExecutable, [
+          'plugin', '--profile', PROFILE, 'add', this.spec(plugin, release), '--save-exact',
+        ], {
+          env: this.commandEnvironment,
+          cwd: this.sourceRoot || Os.homedir(),
+          timeoutMs: 5 * 60_000,
+          maxBytes: 512 * 1024,
+        })
+        if (result.exitCode !== 0) {
+          throw new Error((result.stderr || result.stdout || 'dsh plugin exit ' + result.exitCode).trim())
+        }
+      }
+      state.channels = { ...(state.channels || {}), [plugin.key]: channel }
+      state.enabled = {
+        ...(state.enabled || {}),
+        [plugin.key]: action === 'enable'
+          ? true
+          : (typeof state.enabled?.[plugin.key] === 'boolean' ? state.enabled[plugin.key] : wasEnabled),
+      }
+      this.writeState(state)
+      this.reconcileActivation(state)
     }
     this.releaseCache = null
     this.log('[plugins] ' + action + ' ' + plugin.key + ' channel=' + channel)

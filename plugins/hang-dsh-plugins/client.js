@@ -27,6 +27,7 @@ window.__ModuleLoader__.load({
         '.dsh-desktop-card{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}',
         '.dsh-desktop-title{font-size:14px;font-weight:650;color:var(--dsw-alias-label-primary)}',
         '.dsh-desktop-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}',
+        '.dsh-desktop-actions{display:flex;align-items:center;justify-content:flex-end;gap:8px;min-height:32px}',
         '.dsh-desktop-grow{flex:1;min-width:120px}',
         '.dsh-desktop-muted{font-size:12px;color:var(--dsw-alias-label-tertiary)}',
         '.dsh-desktop-mono{font-family:var(--dsh-font-mono,ui-monospace,SFMono-Regular,Menlo,monospace);font-size:11px;word-break:break-all}',
@@ -41,14 +42,18 @@ window.__ModuleLoader__.load({
         '.dsh-desktop-badge{flex:none;padding:1px 8px;border-radius:999px;font-size:11px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}',
         '.dsh-desktop-badge-on{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}',
         '.dsh-desktop-badge-beta{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
-        '.dsh-plugin-channel{appearance:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:4px 24px 4px 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}',
+        '.dsh-plugin-channel{appearance:none!important;box-sizing:border-box!important;flex:none!important;width:86px!important;min-width:86px!important;max-width:86px!important;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:4px 22px 4px 9px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}',
         '.dsh-plugin-origin-local{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
-        '.dsh-plugin-item{display:flex;flex-direction:column;gap:8px;padding:10px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
-        '.dsh-plugin-summary,.dsh-plugin-actions{display:flex;align-items:center;gap:10px;width:100%;min-width:0}',
-        '.dsh-plugin-actions{justify-content:flex-end;flex-wrap:wrap}',
+        '.dsh-plugin-item{position:relative;display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"summary summary" "purpose actions";align-items:center;gap:18px 20px;padding:18px 18px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1);overflow:hidden}',
+        '.dsh-plugin-summary{grid-area:summary;display:flex;align-items:center;gap:10px;min-width:0;padding-right:58px}',
+        '.dsh-plugin-actions{grid-area:actions;display:flex;align-items:center;justify-content:flex-end;gap:10px;min-width:0}',
         '.dsh-plugin-name{font-weight:600;color:var(--dsw-alias-label-primary)}',
-        '.dsh-plugin-purpose{flex:1;min-width:0;white-space:normal;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
-        '.dsh-plugin-version{width:100%;font-size:12px;color:var(--dsw-alias-label-tertiary)}',
+        '.dsh-plugin-purpose{grid-area:purpose;min-width:0;white-space:normal;font-size:12px;line-height:18px;color:var(--dsw-alias-label-tertiary)}',
+        '.dsh-plugin-version{flex:none;font-size:12px;color:var(--dsw-alias-label-tertiary)}',
+        '.dsh-plugin-state-dot{width:8px;height:8px;flex:none;border-radius:50%;background:var(--dsw-alias-label-quaternary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-label-quaternary) 14%,transparent)}',
+        '.dsh-plugin-state-dot[data-enabled]{background:var(--dsw-alias-state-success-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent)}',
+        '.dsh-plugin-channel-tag{position:absolute;z-index:1;top:9px;right:-29px;width:92px;padding:2px 0;text-align:center;font-size:9px;font-weight:600;line-height:14px;letter-spacing:.2px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);transform:rotate(45deg);transform-origin:center;pointer-events:none}',
+        '.dsh-plugin-channel-tag[data-beta]{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
         '.hHd-Xa_root:not(.hHd-Xa_collapsed){padding-bottom:4px!important}',
         '.hHd-Xa_footArea{display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;align-items:center!important;column-gap:8px!important}',
         '.hHd-Xa_footerActions{display:contents!important}',
@@ -84,6 +89,7 @@ window.__ModuleLoader__.load({
         inspect()
         return () => observer.disconnect()
       }, [])
+
       if (nativePresent) return null
       const wide = !props || props.wide !== false
       return h('div', { className: 'dsh-cordis-empty' }, [
@@ -163,6 +169,21 @@ window.__ModuleLoader__.load({
         return () => window.removeEventListener('dsh-app-update', receiveUpdate)
       }, [])
 
+      React.useEffect(() => {
+        const receiveUpdate = event => {
+          const detail = event.detail || {}
+          if (detail.state === 'failed') {
+            setBusy(null)
+            setMessage({ kind: 'error', text: '基础插件更新失败：' + (detail.message || '未知错误') })
+            return
+          }
+          setBusy('plugin-manager')
+          setMessage({ kind: 'ok', text: detail.message || '正在更新基础插件…' })
+        }
+        window.addEventListener('dsh-plugin-manager-update', receiveUpdate)
+        return () => window.removeEventListener('dsh-plugin-manager-update', receiveUpdate)
+      }, [])
+
       const restart = () => nativeControl()?.postMessage('restart')
       const updateApp = () => {
         const bridge = nativeControl()
@@ -187,6 +208,16 @@ window.__ModuleLoader__.load({
           setMessage({ kind: 'error', text: 'dsh 更新失败：' + (error.message || String(error)) })
           setBusy(null)
         }
+      }
+      const updatePluginManager = () => {
+        const bridge = nativeControl()
+        if (!bridge || !pluginManager.latest) return
+        setBusy('plugin-manager')
+        setMessage({ kind: 'ok', text: '正在准备基础插件更新…' })
+        bridge.postMessage({
+          action: 'updatePluginManager',
+          version: pluginManager.latest,
+        })
       }
 
       const value = state.value || {}
@@ -235,10 +266,21 @@ window.__ModuleLoader__.load({
           ]),
           state.loading && !state.value
             ? h('div', { className: 'dsh-desktop-muted' }, '正在读取基础插件状态…')
-            : pluginManager.installed
-            ? h('div', null, '当前 ' + pluginManager.installed)
-            : h('div', { className: 'dsh-desktop-error' }, '基础插件版本不可用'),
-          h('div', { className: 'dsh-desktop-muted' }, '由 Desktop App 安装和校验，随 App 更新。'),
+            : status(pluginManager.installed, pluginManager.latest, pluginManager.updateAvailable, pluginManager.error),
+          h('div', { className: 'dsh-desktop-actions' }, [
+            pluginManager.updateAvailable
+              ? h('button', {
+                  className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+                  disabled: busy === 'plugin-manager' || !nativeControl() || !pluginManager.latest,
+                  onClick: updatePluginManager,
+                }, busy === 'plugin-manager' ? '正在更新…' : '更新')
+              : h('button', {
+                  className: 'dsh-desktop-btn',
+                  disabled: state.loading || busy === 'plugin-manager',
+                  onClick: () => load(true),
+                }, state.loading ? '检查中…' : '检查更新'),
+          ]),
+          h('div', { className: 'dsh-desktop-muted' }, '由 Desktop App 安装、更新和修复，不经过插件自身的管理链路。'),
         ]),
         h('div', { className: 'dsh-desktop-card' }, [
           h('div', { className: 'dsh-desktop-title' }, '@deepseek-ai/dsh'),
@@ -258,6 +300,7 @@ window.__ModuleLoader__.load({
       const [busy, setBusy] = React.useState(null)
       const [channels, setChannels] = React.useState({})
       const [message, setMessage] = React.useState(null)
+      const [checked, setChecked] = React.useState(false)
 
       const load = React.useCallback(async (force = false) => {
         setState(previous => ({ ...previous, loading: true, error: null }))
@@ -270,6 +313,7 @@ window.__ModuleLoader__.load({
             current[plugin.key] || plugin.channel,
           ])))
           if (force) {
+            setChecked(true)
             const count = value.plugins.filter(plugin => plugin.updateAvailable).length
             setMessage({
               kind: 'ok',
@@ -317,38 +361,48 @@ window.__ModuleLoader__.load({
           const channel = channels[plugin.key] || plugin.channel
           const release = plugin.releases[channel]
           const channelChanged = channel !== plugin.channel
-          const primaryAction = plugin.installed ? (channelChanged || plugin.updateAvailable ? 'update' : null) : 'install'
+          const showUpdate = plugin.installed && (channelChanged || (checked && plugin.updateAvailable))
+          const toggleAction = plugin.enabled ? 'disable' : 'enable'
           return h('div', { key: plugin.key, className: 'dsh-plugin-item' }, [
             h('div', { className: 'dsh-plugin-summary' }, [
+              h('span', {
+                className: 'dsh-plugin-state-dot',
+                'data-enabled': plugin.enabled || undefined,
+                title: plugin.enabled ? '运行中' : '未启用',
+                'aria-label': plugin.enabled ? '运行中' : '未启用',
+              }),
               h('span', { className: 'dsh-plugin-name' }, plugin.name),
-              channel === 'beta' ? h('span', { className: 'dsh-desktop-badge dsh-desktop-badge-beta' }, 'Beta') : null,
-              h('span', { className: 'dsh-plugin-purpose' }, plugin.purpose),
+              h('span', { className: 'dsh-plugin-version' }, plugin.installedVersion
+                ? '当前 ' + plugin.installedVersion + (checked && plugin.updateAvailable && release ? ' · 最新 ' + release.version : '')
+                : '未安装'),
             ]),
+            h('span', {
+              className: 'dsh-plugin-channel-tag',
+              'data-beta': channel === 'beta' || undefined,
+            }, channel === 'beta' ? 'Beta' : '正式版'),
+            h('div', { className: 'dsh-plugin-purpose' }, plugin.purpose),
             h('div', { className: 'dsh-plugin-actions' }, [
               h('select', {
                 className: 'dsh-plugin-channel',
                 value: channel,
                 disabled: busy !== null,
+                'aria-label': plugin.name + ' 版本频道',
                 onChange: event => setChannels(value => ({ ...value, [plugin.key]: event.currentTarget.value })),
               }, [
                 h('option', { key: 'stable', value: 'stable', disabled: !plugin.releases.stable }, '正式版'),
                 h('option', { key: 'beta', value: 'beta', disabled: !plugin.releases.beta }, 'Beta'),
               ]),
-              h('span', { className: 'dsh-desktop-badge' + (plugin.enabled ? ' dsh-desktop-badge-on' : '') }, plugin.enabled ? '运行中' : '未启用'),
-              primaryAction ? h('button', {
+              showUpdate ? h('button', {
                 className: 'dsh-desktop-btn dsh-desktop-btn-primary',
                 disabled: busy !== null || !release,
-                onClick: () => mutate(plugin, primaryAction),
-              }, busy === plugin.key + ':' + primaryAction ? '处理中…' : (plugin.installed ? '更新' : '启用')) : null,
-              plugin.installed ? h('button', {
+                onClick: () => mutate(plugin, 'update'),
+              }, busy === plugin.key + ':update' ? '处理中…' : (channelChanged ? '切换' : '更新')) : null,
+              h('button', {
                 className: 'dsh-desktop-btn',
                 disabled: busy !== null,
-                onClick: () => mutate(plugin, 'remove'),
-              }, busy === plugin.key + ':remove' ? '处理中…' : '停用') : null,
+                onClick: () => mutate(plugin, toggleAction),
+              }, busy === plugin.key + ':' + toggleAction ? '处理中…' : (plugin.enabled ? '停用' : '启用')),
             ]),
-            h('div', { className: 'dsh-plugin-version' }, plugin.installedVersion
-              ? '当前 ' + plugin.installedVersion + (release ? ' · 最新 ' + release.version : '')
-              : (release ? '可安装 ' + release.version : '这个频道还没有版本')),
           ])
         }),
         state.error ? h('div', { className: 'dsh-desktop-error' }, state.error) : null,

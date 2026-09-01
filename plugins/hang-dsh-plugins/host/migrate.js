@@ -53,7 +53,7 @@ async function migrate(options = {}) {
 
   for (const key of pending) {
     log('[migration] installing legacy enabled plugin ' + key)
-    await repository.mutate(key, 'install', 'beta')
+    await repository.mutate(key, 'enable', 'beta')
   }
 
   const current = await repository.list(true)

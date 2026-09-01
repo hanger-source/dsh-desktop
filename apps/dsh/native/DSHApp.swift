@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var appliedPageTheme: String?
     private var currentLaunch: RuntimeLaunch?
     private let appUpdateController = AppUpdateController()
+    private let pluginManagerUpdateController = PluginManagerUpdateController()
     private lazy var webNavigationController = WebNavigationController(
         onFinish: { [weak self] webView in
             webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
@@ -213,6 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.navigationDelegate = webNavigationController
         webView.uiDelegate = webNavigationController
         appUpdateController.attach(to: webView)
+        pluginManagerUpdateController.attach(to: webView)
         startupPage = StartupPageController(webView: webView)
         content.addSubview(webView)
         let dragView = TitlebarDragView(frame: NSRect(
@@ -305,6 +307,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                     reloadService()
                     return
                 }
+                if pluginManagerUpdateController.handle(
+                    command,
+                    launch: currentLaunch,
+                    onInstalled: { [weak self] in self?.reloadService() }
+                ) { return }
                 if appUpdateController.handle(command) { return }
             }
         }

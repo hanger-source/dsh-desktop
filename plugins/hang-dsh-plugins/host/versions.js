@@ -52,19 +52,56 @@ class VersionService {
 
   async status(force = false) {
     if (!force && this.cache && Date.now() - this.cacheAt < 5 * 60_000) return this.cache
-    const [app, dsh] = await Promise.all([this.appStatus(), this.dshStatus()])
+    const [app, pluginManager, dsh] = await Promise.all([
+      this.appStatus(),
+      this.pluginManagerStatus(),
+      this.dshStatus(),
+    ])
     this.cache = {
       app,
-      pluginManager: {
-        installed: this.pluginManagerVersion,
-        enabled: true,
-        managedByApp: true,
-      },
+      pluginManager,
       dsh,
       checkedAt: new Date().toISOString(),
     }
     this.cacheAt = Date.now()
     return this.cache
+  }
+
+  async pluginManagerStatus() {
+    let latest = null
+    let error = null
+    try {
+      const prefix = 'plugin-hang-dsh-plugins-v'
+      const result = await run('git', [
+        'ls-remote', '--tags', '--refs', 'https://github.com/' + this.repository + '.git',
+      ], {
+        env: this.commandEnvironment,
+        timeoutMs: 30_000,
+        maxBytes: 2 * 1024 * 1024,
+      })
+      if (result.exitCode !== 0) {
+        throw new Error((result.stderr || result.stdout || 'git ls-remote exit ' + result.exitCode).trim())
+      }
+      const versions = result.stdout.split('\n')
+        .map(line => line.split('\trefs/tags/')[1] || '')
+        .filter(value => value.startsWith(prefix))
+        .map(value => normalizeVersion(value.slice(prefix.length)))
+        .filter(Boolean)
+      latest = versions.sort(compareVersions).at(-1) || null
+    } catch (caught) {
+      error = caught.message
+    }
+    const compared = this.pluginManagerVersion && latest
+      ? compareVersions(this.pluginManagerVersion, latest)
+      : null
+    return {
+      installed: this.pluginManagerVersion,
+      latest,
+      updateAvailable: compared === null ? null : compared < 0,
+      enabled: true,
+      managedByApp: true,
+      error,
+    }
   }
 
   async appStatus() {

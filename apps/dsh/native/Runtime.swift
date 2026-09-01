@@ -77,12 +77,23 @@ final class RuntimeInstaller {
                                     case .failure(let error):
                                         completion(.failure(error))
                                     case .success:
-                                        completion(.success(RuntimeLaunch(
-                                            dsh: prepared.dsh,
+                                        self.reconcilePluginActivationState(
                                             node: prepared.node,
-                                            npm: prepared.npm,
-                                            pnpm: prepared.pnpm!
-                                        )))
+                                            dsh: prepared.dsh,
+                                            pnpm: prepared.pnpm!,
+                                            npm: prepared.npm
+                                        ) { activationResult in
+                                            switch activationResult {
+                                            case .failure(let error): completion(.failure(error))
+                                            case .success:
+                                                completion(.success(RuntimeLaunch(
+                                                    dsh: prepared.dsh,
+                                                    node: prepared.node,
+                                                    npm: prepared.npm,
+                                                    pnpm: prepared.pnpm!
+                                                )))
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -141,7 +152,7 @@ final class RuntimeInstaller {
     }
 
     private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
-    private let pluginManagerVersion = "0.1.0-beta.6"
+    private let pluginManagerVersion = "0.1.0-beta.8"
 
     private func ensurePnpm(
         tools: Tools,
@@ -181,7 +192,9 @@ final class RuntimeInstaller {
         status: @escaping (String, String, String?) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        if installedPluginManagerVersion() == pluginManagerVersion && profileHasPluginManagerBundle() {
+        if let installed = installedPluginManagerVersion(),
+           compareSemanticVersions(installed, pluginManagerVersion) >= 0,
+           profileHasPluginManagerBundle() {
             completion(.success(()))
             return
         }
@@ -212,11 +225,124 @@ final class RuntimeInstaller {
         }
     }
 
+    func updatePluginManager(
+        launch: RuntimeLaunch,
+        version: String,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard isSemanticVersion(version) else {
+            completion(.failure(messageError("基础插件版本无效：\(version)")))
+            return
+        }
+        let spec = "github:hanger-source/dsh-desktop#plugin-hang-dsh-plugins-v\(version)&path:/plugins/hang-dsh-plugins"
+        let executables = [launch.node, launch.pnpm] + (launch.npm.map { [$0] } ?? [])
+        runCommand(
+            executable: launch.dsh,
+            arguments: ["plugin", "--profile", "web", "add", spec, "--save-exact"],
+            environment: Env.commandEnvironment(executable: launch.dsh, additionalExecutables: executables),
+            logName: "plugin-manager-update.log",
+            timeout: 300
+        ) { result in
+            if case .failure(let reason) = result {
+                completion(.failure(self.messageError(
+                    "Hang DSH Plugins 更新失败：\(reason)\n\n" + self.logTail("plugin-manager-update.log")
+                )))
+                return
+            }
+            guard self.installedPluginManagerVersion() == version,
+                  self.profileHasPluginManagerBundle() else {
+                completion(.failure(self.messageError(
+                    "dsh plugin 已退出成功，但基础插件没有更新到 \(version)。\n\n" + self.logTail("plugin-manager-update.log")
+                )))
+                return
+            }
+            self.reconcilePluginActivationState(
+                node: launch.node,
+                dsh: launch.dsh,
+                pnpm: launch.pnpm,
+                npm: launch.npm,
+                completion: completion
+            )
+        }
+    }
+
+    private func reconcilePluginActivationState(
+        node: String,
+        dsh: String,
+        pnpm: String,
+        npm: String?,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        let script = Env.dshHome + "/profiles/web/node_modules/@hanger-source/hang-dsh-plugins/host/reconcile.js"
+        guard FileManager.default.fileExists(atPath: script) else {
+            completion(.failure(messageError("基础插件状态入口不存在：\n\(script)")))
+            return
+        }
+        var environment = Env.commandEnvironment(
+            executable: node,
+            additionalExecutables: [dsh, pnpm] + (npm.map { [$0] } ?? [])
+        )
+        environment["DSH_HOME"] = Env.dshHome
+        environment["DSH_EXECUTABLE"] = dsh
+        runCommand(
+            executable: node,
+            arguments: [script],
+            environment: environment,
+            logName: "plugin-activation.log",
+            timeout: 30
+        ) { result in
+            if case .failure(let reason) = result {
+                completion(.failure(self.messageError(
+                    "应用插件启用状态失败：\(reason)\n\n" + self.logTail("plugin-activation.log")
+                )))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
     private func installedPluginManagerVersion() -> String? {
         let path = Env.dshHome + "/profiles/web/node_modules/@hanger-source/hang-dsh-plugins/package.json"
         guard let data = FileManager.default.contents(atPath: path),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
         return json["version"] as? String
+    }
+
+    private func isSemanticVersion(_ value: String) -> Bool {
+        value.range(
+            of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
+            options: .regularExpression
+        ) != nil
+    }
+
+    private func compareSemanticVersions(_ left: String, _ right: String) -> Int {
+        func parse(_ value: String) -> ([Int], [String])? {
+            let parts = value.split(separator: "-", maxSplits: 1).map(String.init)
+            let core = parts[0].split(separator: ".").compactMap { Int($0) }
+            guard core.count == 3 else { return nil }
+            let prerelease = parts.count == 2 ? parts[1].split(separator: ".").map(String.init) : []
+            return (core, prerelease)
+        }
+        guard let lhs = parse(left), let rhs = parse(right) else { return 0 }
+        for index in 0..<3 where lhs.0[index] != rhs.0[index] {
+            return lhs.0[index] < rhs.0[index] ? -1 : 1
+        }
+        if lhs.1.isEmpty || rhs.1.isEmpty {
+            if lhs.1.isEmpty == rhs.1.isEmpty { return 0 }
+            return lhs.1.isEmpty ? 1 : -1
+        }
+        for index in 0..<max(lhs.1.count, rhs.1.count) {
+            if index >= lhs.1.count { return -1 }
+            if index >= rhs.1.count { return 1 }
+            let a = lhs.1[index]
+            let b = rhs.1[index]
+            if a == b { continue }
+            if let an = Int(a), let bn = Int(b) { return an < bn ? -1 : 1 }
+            if Int(a) != nil { return -1 }
+            if Int(b) != nil { return 1 }
+            return a < b ? -1 : 1
+        }
+        return 0
     }
 
     private func ensureLegacyPluginsMigrated(

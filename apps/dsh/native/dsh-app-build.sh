@@ -14,7 +14,7 @@ ICON_SRC="$WORK"
 mkdir -p "$BIN_DIR" "$RS_DIR"
 
 # --- Swift 源码：原生壳按职责拆分，统一从本目录编译 ---
-SWIFT_SOURCES=(DSHApp.swift Runtime.swift DSHWindow.swift WebNavigationController.swift StartupPageController.swift AppUpdater.swift AppUpdateController.swift)
+SWIFT_SOURCES=(DSHApp.swift Runtime.swift DSHWindow.swift WebNavigationController.swift StartupPageController.swift AppUpdater.swift AppUpdateController.swift PluginManagerUpdateController.swift)
 for source in "${SWIFT_SOURCES[@]}"; do
 	if [ ! -f "$SRC_DIR/$source" ]; then
 		echo "缺少 $SRC_DIR/$source" >&2
