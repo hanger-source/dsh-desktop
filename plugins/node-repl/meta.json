@@ -1,6 +1,6 @@
 {
   "name": "Node REPL",
-  "purpose": "为当前 Cordis 会话提供持久 JavaScript REPL 工具",
+  "purpose": "提供持久 JavaScript 运行环境，跨调用保留变量和模块",
   "idPrefix": "nodr",
   "matchPrefix": ["nodr"]
 }
