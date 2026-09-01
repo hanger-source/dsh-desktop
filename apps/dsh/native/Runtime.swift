@@ -72,28 +72,21 @@ final class RuntimeInstaller {
                             case .failure(let error):
                                 completion(.failure(error))
                             case .success:
-                                self.ensureLegacyPluginsMigrated(tools: prepared, status: status) { migrationResult in
-                                    switch migrationResult {
-                                    case .failure(let error):
-                                        completion(.failure(error))
+                                self.reconcilePluginActivationState(
+                                    node: prepared.node,
+                                    dsh: prepared.dsh,
+                                    pnpm: prepared.pnpm!,
+                                    npm: prepared.npm
+                                ) { activationResult in
+                                    switch activationResult {
+                                    case .failure(let error): completion(.failure(error))
                                     case .success:
-                                        self.reconcilePluginActivationState(
-                                            node: prepared.node,
+                                        completion(.success(RuntimeLaunch(
                                             dsh: prepared.dsh,
-                                            pnpm: prepared.pnpm!,
-                                            npm: prepared.npm
-                                        ) { activationResult in
-                                            switch activationResult {
-                                            case .failure(let error): completion(.failure(error))
-                                            case .success:
-                                                completion(.success(RuntimeLaunch(
-                                                    dsh: prepared.dsh,
-                                                    node: prepared.node,
-                                                    npm: prepared.npm,
-                                                    pnpm: prepared.pnpm!
-                                                )))
-                                            }
-                                        }
+                                            node: prepared.node,
+                                            npm: prepared.npm,
+                                            pnpm: prepared.pnpm!
+                                        )))
                                     }
                                 }
                             }
@@ -152,7 +145,7 @@ final class RuntimeInstaller {
     }
 
     private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
-    private let pluginManagerVersion = "0.1.0"
+    private let pluginManagerVersion = "0.1.1"
 
     private func ensurePnpm(
         tools: Tools,
@@ -343,44 +336,6 @@ final class RuntimeInstaller {
             return a < b ? -1 : 1
         }
         return 0
-    }
-
-    private func ensureLegacyPluginsMigrated(
-        tools: Tools,
-        status: @escaping (String, String, String?) -> Void,
-        completion: @escaping (Result<Void, Error>) -> Void
-    ) {
-        let marker = Env.dshHome + "/profiles/web/.hang-dsh-plugins-migration-v2.json"
-        if FileManager.default.fileExists(atPath: marker) {
-            completion(.success(()))
-            return
-        }
-        let script = Env.dshHome + "/profiles/web/node_modules/@hanger-source/hang-dsh-plugins/host/migrate.js"
-        guard FileManager.default.fileExists(atPath: script) else {
-            completion(.failure(messageError("Hang 的插件迁移入口不存在：\n\(script)")))
-            return
-        }
-        status("正在迁移 Hang 的插件", "正在把旧版本中实际启用的插件接入正式 DSH profile…", "plugin-migration.log")
-        var environment = Env.commandEnvironment(
-            executable: tools.node,
-            additionalExecutables: [tools.dsh, tools.pnpm!] + (tools.npm.map { [$0] } ?? [])
-        )
-        environment["DSH_HOME"] = Env.dshHome
-        environment["DSH_EXECUTABLE"] = tools.dsh
-        environment["DSH_DESKTOP_GITHUB"] = "hanger-source/dsh-desktop"
-        runCommand(
-            executable: tools.node,
-            arguments: [script],
-            environment: environment,
-            logName: "plugin-migration.log",
-            timeout: 600
-        ) { result in
-            if case .failure(let reason) = result {
-                completion(.failure(self.messageError("旧插件迁移失败：\(reason)\n\n" + self.logTail("plugin-migration.log"))))
-                return
-            }
-            completion(.success(()))
-        }
     }
 
     private func profileHasPluginManagerBundle() -> Bool {
