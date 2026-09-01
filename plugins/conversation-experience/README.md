@@ -1,8 +1,10 @@
 # 会话体验
 
-DSH 动态插件，改善高频会话操作：
+一个 DSH 动态插件，Client 源码按职责拆分：
 
-- 终端命令：保留 DSH 原生卡片、标题、图标、状态、复制和输出；命令过长被截断时，点击命令区域展开，再次点击收起。
-- 排队消息：多行预览与逐条展开，使用 `textarea` 编辑；`⌘/Ctrl + Enter` 保存，`Esc` 取消，普通 Enter 保留换行。
+- `client/terminal.js`：保留 DSH 原生终端卡，只增强被截断命令的点击展开和收起。
+- `client/queue.js`：接管排队消息的多行预览、逐条展开和 `textarea` 编辑；操作按钮沿用 DSH 原生图标。
 
-终端部分只增强原生 `[data-terminal]` 的命令区域，不接管工具渲染。排队消息使用 DSH 已公开的 `conversation.input.dock` 槽位；写操作通过当前 `sessions` binding 的正式 Session Remote API 完成，不复制队列状态。队列 entry 使用私有 ID，并在插件存活期间隐藏原生稳定根节点 `[data-queue-dock]`；停用插件后恢复 DSH 原生组件。
+仓库运行时把 `client/*.js` 组合成同一个 Client half，因此 Cordis 中仍然只有一个「会话体验」插件、一个审批状态和一个启停入口。队列模块使用公开的 `conversation.input.dock` 槽位；写操作通过当前 `sessions` binding 的正式 Session Remote API 完成，不复制队列状态。
+
+根目录的 `code.client.js` 是从这两个模块机械生成的旧 Desktop App 装载产物，不是维护源码；当前加载器会校验它与 `client/*.js` 完全一致，避免双份实现漂移。
