@@ -55,11 +55,11 @@ jobs:
       - name: Verify plugin manager release
         run: |
           set -euo pipefail
-          tag='plugin-hang-dsh-plugins-v0.1.0-beta.8'
+          tag='plugin-hang-dsh-plugins-v0.1.0-beta.9'
           git cat-file -e "$tag^{commit}"
           git cat-file -e "$tag:plugins/hang-dsh-plugins/host/reconcile.js"
           version="$(git show "$tag:plugins/hang-dsh-plugins/package.json" | jq -r .version)"
-          [ "$version" = '0.1.0-beta.8' ] || { echo "插件管理器 tag 版本不一致：$version" >&2; exit 1; }
+          [ "$version" = '0.1.0-beta.9' ] || { echo "插件管理器 tag 版本不一致：$version" >&2; exit 1; }
 
       - name: Build App
         env:
