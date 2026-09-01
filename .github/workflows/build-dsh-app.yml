@@ -52,7 +52,15 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Build App with bundled runtime
+      - name: Verify plugin manager release
+        run: |
+          set -euo pipefail
+          tag='plugin-hang-dsh-plugins-v0.1.0-beta.1'
+          git cat-file -e "$tag^{commit}"
+          version="$(git show "$tag:plugins/hang-dsh-plugins/package.json" | jq -r .version)"
+          [ "$version" = '0.1.0-beta.1' ] || { echo "插件管理器 tag 版本不一致：$version" >&2; exit 1; }
+
+      - name: Build App
         env:
           VERSION: ${{ steps.version.outputs.version }}
         run: |
@@ -67,9 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           test -x dist/DSH.app/Contents/MacOS/DSHApp
-          test -f dist/DSH.app/Contents/Resources/runtime/host/index.js
-          test -f dist/DSH.app/Contents/Resources/runtime/client/client.js
-          test -f dist/DSH.app/Contents/Resources/runtime/web-boot.yml
+          test ! -e dist/DSH.app/Contents/Resources/runtime
           actual="$(defaults read "$PWD/dist/DSH.app/Contents/Info" CFBundleShortVersionString)"
           [ "$actual" = "$VERSION" ] || { echo "版本不一致：$actual != $VERSION" >&2; exit 1; }
           codesign --verify --deep --strict dist/DSH.app

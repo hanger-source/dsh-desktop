@@ -1,30 +1,21 @@
-// node-repl —— HOST 半
-//
-// 插件由 DSH Desktop 的 Hang 插件加载器动态装入 Cordis。它通过正式的
-// subprocess/tools capability seams 启动随仓库同步的 MCP server 并注册工具；
-// 不依赖 Profile、Bundle、require、process 或宿主私有模块。
-return {
+import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { fileURLToPath } from 'node:url'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+
+const packageDirectory = dirname(fileURLToPath(import.meta.url))
+const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
+
+const plugin = {
   name: 'node-repl',
   inject: ['subprocess', 'timer', 'tools', 'attachments'],
   async apply(ctx) {
-    const dshHomePath = ctx.get('dshHomePath')
-    if (typeof dshHomePath !== 'function') {
-      throw new Error('node-repl: dshHomePath 服务不可用')
-    }
-
-    const command = dshHomePath(
-      'dsh-desktop',
-      'plugins',
-      'node-repl',
-      'vendor',
-      'darwin-arm64',
-      'node_repl',
-    )
+    const command = join(packageDirectory, 'vendor', 'darwin-arm64', 'node_repl')
     const node = await ctx.subprocess.resolveExecutable('node')
     const base64Executable = await ctx.subprocess.resolveExecutable('base64')
     const handle = ctx.subprocess.spawn({
       argv: [command, '--disable-sandbox'],
-      cwd: dshHomePath(),
+      cwd: dshHome,
       env: { NODE_REPL_NODE_PATH: node },
       stdio: {
         stdin: 'pipe',
@@ -190,7 +181,7 @@ return {
       // globals inside the plugin sandbox.
       const decoder = ctx.subprocess.spawn({
         argv: [base64Executable, '-D'],
-        cwd: dshHomePath(),
+        cwd: dshHome,
         env: {},
         stdio: {
           stdin: { data },
@@ -300,10 +291,11 @@ return {
         const properties = input.properties && typeof input.properties === 'object'
           ? input.properties
           : {}
+        const required = new Set(Array.isArray(input.required) ? input.required : [])
         for (const name of Object.keys(properties)) {
           schema.properties[name] = supportedSchema(properties[name], false)
+          if (required.has(name)) schema.properties[name].required = true
         }
-        if (Array.isArray(input.required)) schema.required = input.required
         if (!root && typeof input.additionalProperties === 'boolean') {
           schema.additionalProperties = input.additionalProperties
         }
@@ -312,10 +304,17 @@ return {
     }
 
     function parameterSchema(inputSchema) {
-      // DSH 的工具参数根由 ToolRuntime 统一定义为开放对象。这里把 MCP
-      // JSON Schema 投影到它支持的统一 DSL；根开放性由 DSH 负责，嵌套
-      // 对象、字段类型、required、枚举和说明仍保持 server 的原始契约。
-      return supportedSchema(inputSchema, true)
+      // defineTool 的参数根是隐式开放对象，因此这里返回字段表；JSON
+      // Schema 的 required 数组被下沉为统一 DSL 的逐字段 required 标记。
+      const properties = inputSchema && inputSchema.properties && typeof inputSchema.properties === 'object'
+        ? inputSchema.properties
+        : {}
+      const required = new Set(Array.isArray(inputSchema && inputSchema.required) ? inputSchema.required : [])
+      return Object.fromEntries(Object.entries(properties).map(([name, value]) => {
+        const schema = supportedSchema(value, false)
+        if (required.has(name)) schema.required = true
+        return [name, schema]
+      }))
     }
 
     try {
@@ -333,7 +332,7 @@ return {
       for (const tool of tools) {
         if (!tool || typeof tool.name !== 'string' || !tool.inputSchema) continue
         const publicName = 'mcp__node_repl__' + tool.name
-        const definition = harness.defineTool({
+        const definition = defineTool({
           name: publicName,
           description: String(tool.description || ('Node REPL MCP tool: ' + tool.name)),
           parameters: parameterSchema(tool.inputSchema),
@@ -351,7 +350,7 @@ return {
             return persistResultImages(result)
           },
         })
-        toolDisposers.push(harness.registerTool(ctx, definition))
+        toolDisposers.push(ctx.tools.register(definition))
       }
 
       console.log(
@@ -379,3 +378,6 @@ return {
     }, 'node-repl MCP process')
   },
 }
+
+export const inject = plugin.inject
+export const apply = plugin.apply

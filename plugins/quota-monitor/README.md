@@ -1,6 +1,6 @@
 # quota-monitor
 
-侧边栏底部用量/余额监视器（host+client 配对插件），App 启动时由 dsh-boot 自动启用。
+侧边栏底部用量/余额监视器，是一个正式的 Host + Client DSH Bundle。
 
 ## 功能
 
@@ -18,14 +18,8 @@
 
 百分比为官方接口整数口径（公开接口无小数精度）；金额原样小数。
 
-## 手动启用（一般不需要——dsh-boot 已自动拉起；以下为手动 define/run 步骤）
+## 安装
 
-1. 读取本目录 `code.host.js` 全文，作为 `cordis_define` 的 `code.host` 函数体。
-2. 读取本目录 `code.client.js` 全文，作为 `cordis_define` 的 `code.client` 函数体。
-3. `cordis_define`：kind `new`，idPrefix `quota`，name `model-quota-monitor`。
-4. `cordis_run`（mode `run`）激活；若出现批准请求，在界面上允许。
-5. 展开侧边栏（非 56px 窄栏）即可看到用量面板。
+`dsh plugin --profile web add 'github:hanger-source/dsh-desktop#<tag>&path:/plugins/quota-monitor'`
 
-## 更新约定
-
-仓库只保存**当前最新版一份源码**（更新代码时直接覆盖本目录两个文件），不保留历史版本；git 自行管理历史。
+Host 通过自己的 `/api/hanger/quota` 路由向 Client 返回 JSON，不依赖动态插件的 `harness.handle/host.call` 通道。

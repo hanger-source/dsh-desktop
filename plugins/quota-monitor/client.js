@@ -1,10 +1,17 @@
-// quota-monitor —— CLIENT 半（当前最新版，2026-08-31）
-//
-// 本文件内容即为 cordis_define 的 code.client 函数体：
-// Agent 重放时把整个文件内容原样作为 code.client 传入即可。
-// 运行效果：侧边栏底部「插件/用量/设置」三行中的用量面板，
-// OpenCode Go 名称加粗并与更新时间同行，小时/本周/本月逐行排布，剩余倒计时无"后重置"字样。
-return {
+window.__ModuleLoader__.load({
+  id: '@hanger-source/dsh-quota-monitor',
+  factory: (require) => {
+    const React = require('react')
+    const styleNodes = []
+    const styles = {
+      insert(css) {
+        const node = document.createElement('style')
+        node.textContent = css
+        document.head.appendChild(node)
+        styleNodes.push(node)
+      },
+    }
+    const plugin = {
   inject: ['slots', 'timer', 'sessions', 'modelDirectories'],
   apply(ctx) {
     // 用量面板横跨整个 footer；底部一行保留 Cordis 插件状态在左、设置在右。
@@ -30,6 +37,19 @@ return {
       '.mq-muted{opacity:.6}' +
       '.mq-live{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--dsw-alias-state-success-primary);animation:mq-blink 1.2s infinite}' +
       '@keyframes mq-blink{50%{opacity:.25}}')
+
+    async function quotaSnapshot(selection, allowStale) {
+      const query = new URLSearchParams()
+      if (selection && selection.provider) query.set('provider', selection.provider)
+      if (selection && selection.model) query.set('model', selection.model)
+      if (allowStale) query.set('allowStale', '1')
+      const response = await fetch('/api/hanger/quota?' + query)
+      const result = await response.json().catch(() => null)
+      if (!response.ok || !result || result.ok !== true) {
+        throw new Error(result && result.error || ('HTTP ' + response.status))
+      }
+      return result.value
+    }
 
     function fmtCurrency(c) {
       const m = { CNY: '¥', USD: '$', EUR: '€', GBP: '£', JPY: '¥' }
@@ -92,7 +112,7 @@ return {
         else setSnap(null)
         const load = async (allowStale) => {
           try {
-            const data = await host.call('quota.snapshot', { selection: currentModel, allowStale })
+            const data = await quotaSnapshot(currentModel, allowStale)
             if (active) {
               if (provider) snapshots.current.set(provider, data)
               setSnap(data)
@@ -184,3 +204,16 @@ return {
     ))
   },
 }
+    const apply = plugin.apply
+    return {
+      ...plugin,
+      apply(ctx) {
+        const result = apply.call(plugin, ctx)
+        ctx.effect(() => () => {
+          for (const node of styleNodes.splice(0)) node.remove()
+        }, 'dsh-quota-monitor: styles')
+        return result
+      },
+    }
+  },
+})

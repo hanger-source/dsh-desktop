@@ -1,18 +1,8 @@
-const script = document.currentScript
-if (!script) throw new Error('dsh-desktop-runtime: document.currentScript unavailable')
-const pathname = decodeURIComponent(new URL(script.src).pathname)
-const prefix = '/plugins/'
-const suffix = '/client.js'
-if (!pathname.startsWith(prefix) || !pathname.endsWith(suffix)) {
-  throw new Error('dsh-desktop-runtime: unexpected bundle URL ' + pathname)
-}
-const moduleId = pathname.slice(prefix.length, -suffix.length)
-
 window.__ModuleLoader__.load({
-  id: moduleId,
+  id: '@hanger-source/hang-dsh-plugins',
   factory: (require) => {
     const React = require('react')
-    const inject = ['slots', 'remote', 'remote.dynamicCordisRunner', 'dynamicCordisRunner']
+    const inject = ['slots']
     const h = React.createElement
     const nativeControl = () => window.webkit?.messageHandlers?.dshAppControl
 
@@ -31,7 +21,7 @@ window.__ModuleLoader__.load({
 
     function installStyles() {
       const style = document.createElement('style')
-      style.id = 'dsh-desktop-runtime-styles'
+      style.id = 'hang-dsh-plugins-styles'
       style.textContent = [
         '.dsh-desktop-root{display:flex;flex-direction:column;gap:12px;padding:4px 2px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}',
         '.dsh-desktop-card{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}',
@@ -50,6 +40,8 @@ window.__ModuleLoader__.load({
         '.dsh-desktop-btn:disabled{opacity:.5;cursor:default}',
         '.dsh-desktop-badge{flex:none;padding:1px 8px;border-radius:999px;font-size:11px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}',
         '.dsh-desktop-badge-on{background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}',
+        '.dsh-desktop-badge-beta{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
+        '.dsh-plugin-channel{appearance:none;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:4px 24px 4px 8px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}',
         '.dsh-plugin-origin-local{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
         '.dsh-plugin-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
         '.dsh-plugin-name{font-weight:600;color:var(--dsw-alias-label-primary)}',
@@ -58,24 +50,6 @@ window.__ModuleLoader__.load({
         '.dsh-settings-nav-plugin-store::before,.dsh-settings-nav-app::before{content:"";width:16px;height:16px;flex:none;background:currentColor;-webkit-mask-image:var(--dsh-settings-nav-icon);-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:16px 16px;mask-image:var(--dsh-settings-nav-icon);mask-position:center;mask-repeat:no-repeat;mask-size:16px 16px}',
         '.dsh-settings-nav-plugin-store{--dsh-settings-nav-icon:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Crect x=%272%27 y=%272%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Crect x=%279%27 y=%272%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Crect x=%272%27 y=%279%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Cpath d=%27M11.5 9v5M9 11.5h5%27/%3E%3C/svg%3E")}',
         '.dsh-settings-nav-app{--dsh-settings-nav-icon:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Crect x=%272%27 y=%272.5%27 width=%2712%27 height=%2711%27 rx=%272%27/%3E%3Cpath d=%27M2 5.5h12%27/%3E%3Cpath d=%27M4.5 4h.01M6.5 4h.01%27/%3E%3C/svg%3E")}',
-        '.hHd-Xa_footArea{flex-direction:row!important;align-items:flex-end!important;justify-content:space-between!important;gap:8px!important}',
-        '.hHd-Xa_footerActions{width:auto!important;flex:1 1 auto!important;min-width:0!important;display:flex!important;align-items:flex-start!important;gap:6px!important;flex-wrap:wrap!important}',
-        '.hHd-Xa_settingsArea{width:auto!important;flex:none!important;margin:0!important;padding:0!important}',
-        '.hHd-Xa_settingsArea>*{margin:0!important}',
-        '.VOzbGW_trigger,.VOzbGW_rail{margin:0!important}',
-        '.hHd-Xa_collapsed .hHd-Xa_footArea{justify-content:center!important;align-items:center!important}',
-        '.mq-root{flex:0 0 100%!important;max-width:none!important;order:-1!important;padding:4px 6px!important}',
-        '.Nqubda_layer{width:auto!important;margin:0!important}',
-        '.Nqubda_badgeLabel{display:none!important}',
-        '.dsh-plugin-empty-layer{position:relative;flex:none;display:flex;align-items:center;width:auto;height:42px;margin:0}',
-        '.dsh-plugin-empty-badge{appearance:none;display:inline-flex;align-items:center;gap:8px;height:42px;margin:0;padding:0 8px;border:0;border-radius:12px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;cursor:pointer}',
-        '.dsh-plugin-empty-badge:hover,.dsh-plugin-empty-badge[aria-expanded="true"]{background:var(--dsw-alias-interactive-bg-hover)}',
-        '.dsh-plugin-empty-icon{display:block;width:16px;height:16px;flex:none;background:currentColor;-webkit-mask-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M6.3 2.2h3.4v2.1h2.1v3.4h-2.1v2.1H6.3V7.7H4.2V4.3h2.1z%27/%3E%3Cpath d=%27M6.3 11.9v1.9M9.7 11.9v1.9M2.2 6h2M11.8 6h2%27/%3E%3C/svg%3E");-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:16px 16px;mask-image:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Cpath d=%27M6.3 2.2h3.4v2.1h2.1v3.4h-2.1v2.1H6.3V7.7H4.2V4.3h2.1z%27/%3E%3Cpath d=%27M6.3 11.9v1.9M9.7 11.9v1.9M2.2 6h2M11.8 6h2%27/%3E%3C/svg%3E");mask-position:center;mask-repeat:no-repeat;mask-size:16px 16px}',
-        '.dsh-plugin-empty-count{color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:16px;font-variant-numeric:tabular-nums;white-space:nowrap}',
-        '.dsh-plugin-empty-panel{position:fixed;z-index:30;width:300px;max-width:calc(100vw - 24px);padding:14px 16px;box-sizing:border-box;border:1px solid var(--dsw-alias-border-inverted);border-radius:12px;background:var(--dsw-specific-menu);box-shadow:var(--dsw-shadow-lv3);color:var(--dsw-alias-label-tertiary);font-size:12px;line-height:18px}',
-        '.dsh-plugin-empty-title{margin-bottom:4px;color:var(--dsw-alias-label-primary);font-size:14px;font-weight:600}',
-        '.dsh-plugin-empty-rail{width:36px;height:36px}',
-        '.dsh-plugin-empty-rail .dsh-plugin-empty-badge{justify-content:center;width:36px;height:36px;padding:0;border-radius:50%}',
       ].join('')
       document.head.appendChild(style)
       return () => style.remove()
@@ -101,89 +75,6 @@ window.__ModuleLoader__.load({
           for (const row of document.querySelectorAll('.' + className)) row.classList.remove(className)
         }
       }
-    }
-
-    function EmptyPluginAction(props) {
-      const ctx = props.ctx
-      const wide = props.wide !== false
-      const root = React.useRef(null)
-      const [open, setOpen] = React.useState(false)
-      const [anchor, setAnchor] = React.useState(null)
-      const plugins = React.useSyncExternalStore(
-        listener => ctx.dynamicCordisRunner.subscribe(listener),
-        () => ctx.dynamicCordisRunner.getSnapshot(),
-      )
-
-      React.useLayoutEffect(() => {
-        if (!open) return
-        const place = () => {
-          const rect = root.current && root.current.getBoundingClientRect()
-          if (rect) setAnchor({ left: rect.left, bottom: window.innerHeight - rect.top + 8 })
-        }
-        place()
-        window.addEventListener('resize', place)
-        return () => window.removeEventListener('resize', place)
-      }, [open])
-
-      React.useEffect(() => {
-        if (!open) return
-        const closeOutside = event => {
-          if (root.current && !root.current.contains(event.target)) setOpen(false)
-        }
-        document.addEventListener('pointerdown', closeOutside)
-        return () => document.removeEventListener('pointerdown', closeOutside)
-      }, [open])
-
-      if (plugins.length > 0) return null
-      return h('div', {
-        ref: root,
-        className: 'dsh-plugin-empty-layer' + (wide ? '' : ' dsh-plugin-empty-rail'),
-        'data-dsh-plugin-empty': true,
-      }, [
-        open && anchor
-          ? h('section', { key: 'panel', className: 'dsh-plugin-empty-panel', style: anchor }, [
-              h('div', { key: 'title', className: 'dsh-plugin-empty-title' }, 'Hang 的插件'),
-              h('div', { key: 'body' }, '还没有运行中的插件。可在“设置 → Hang 的插件”中启用。'),
-            ])
-          : null,
-        h('button', {
-          key: 'trigger',
-          type: 'button',
-          className: 'dsh-plugin-empty-badge',
-          'aria-label': 'Hang 的插件',
-          'aria-expanded': open,
-          onClick: () => setOpen(value => !value),
-        }, [
-          h('span', { key: 'icon', className: 'dsh-plugin-empty-icon', 'aria-hidden': true }),
-          wide ? h('span', { key: 'count', className: 'dsh-plugin-empty-count' }, '0 running') : null,
-        ]),
-      ])
-    }
-
-    async function activatePlugins(ctx, activations) {
-      const live = new Map(ctx.dynamicCordisRunner.getSnapshot().map(row => [row.pluginId, row]))
-      const errors = []
-      for (const target of activations || []) {
-        if (!target.pluginId || !target.packageId) continue
-        const current = live.get(target.pluginId)
-        if (current && current.packageId === target.packageId) continue
-        try {
-          await ctx.dynamicCordisRunner.startUserRun({
-            agentId: target.agentId,
-            pluginId: target.pluginId,
-            packageId: target.packageId,
-            mode: target.mode,
-            hasClientHalf: target.hasClientHalf,
-          })
-          const failure = ctx.dynamicCordisRunner.lastRunError?.getSnapshot?.().get(target.pluginId)
-          if (failure && failure.packageId === target.packageId) {
-            errors.push({ key: target.key, error: failure.message || failure.reason })
-          }
-        } catch (error) {
-          errors.push({ key: target.key, error: error.message || String(error) })
-        }
-      }
-      return errors
     }
 
     function AppSection() {
@@ -292,150 +183,114 @@ window.__ModuleLoader__.load({
       ])
     }
 
-    function PluginSection(props) {
-      const ctx = props.ctx
+    function PluginSection() {
       const [state, setState] = React.useState({ loading: true, value: null, error: null })
       const [busy, setBusy] = React.useState(null)
+      const [channels, setChannels] = React.useState({})
       const [message, setMessage] = React.useState(null)
 
-      const load = React.useCallback(async () => {
+      const load = React.useCallback(async (force = false) => {
         try {
-          const value = await api('/plugins')
+          const value = await api('/plugins' + (force ? '?force=1' : ''))
           setState({ loading: false, value, error: null })
+          setChannels(current => Object.fromEntries(value.plugins.map(plugin => [
+            plugin.key,
+            current[plugin.key] || plugin.channel,
+          ])))
         } catch (error) {
-          setState({ loading: false, value: null, error: error.message || String(error) })
+          setState(previous => ({ loading: false, value: previous.value, error: error.message || String(error) }))
         }
       }, [])
-      React.useEffect(() => { load() }, [load])
+      React.useEffect(() => { load(false) }, [load])
 
-      const sync = async () => {
-        setBusy('sync')
+      const mutate = async (plugin, action) => {
+        const channel = channels[plugin.key] || plugin.channel
+        setBusy(plugin.key + ':' + action)
         setMessage(null)
         try {
-          const result = await api('/plugins/sync', { method: 'POST' })
-          const activationErrors = await activatePlugins(ctx, result.activations)
-          setMessage({
-            kind: activationErrors.length > 0 ? 'error' : 'ok',
-            text: activationErrors.length > 0
-              ? '仓库已同步，但重载失败：' + activationErrors.map(item => item.key + ': ' + item.error).join('；')
-              : '已同步到 ' + (result.commit || '最新提交') + '，插件已在当前页面重载。',
-          })
-          await load()
-        } catch (error) {
-          setMessage({ kind: 'error', text: '同步失败：' + (error.message || String(error)) })
-        } finally {
-          setBusy(null)
-        }
-      }
-
-      const toggle = async plugin => {
-        setBusy(plugin.key)
-        setMessage(null)
-        try {
-          const result = await api('/plugins/toggle', { method: 'POST', body: { key: plugin.key } })
-          const activationErrors = await activatePlugins(ctx, result.activations)
-          setMessage({
-            kind: activationErrors.length > 0 ? 'error' : 'ok',
-            text: activationErrors.length > 0 ? activationErrors.map(item => item.error).join('；') : result.text,
-          })
-          await load()
+          await api('/plugins/mutate', { method: 'POST', body: { key: plugin.key, action, channel } })
+          const bridge = nativeControl()
+          if (bridge) {
+            setMessage({ kind: 'ok', text: '插件已处理，正在重启 APP…' })
+            window.setTimeout(() => bridge.postMessage('restart'), 300)
+          } else {
+            setMessage({ kind: 'ok', text: '插件已处理，重启 dsh 后生效。' })
+            await load(true)
+          }
         } catch (error) {
           setMessage({ kind: 'error', text: error.message || String(error) })
-        } finally {
           setBusy(null)
         }
       }
 
-      if (state.loading) return h('div', { className: 'dsh-desktop-root' }, h('span', { className: 'dsh-desktop-muted' }, '正在读取插件仓库…'))
-      if (state.error) return h('div', { className: 'dsh-desktop-root' }, h('span', { className: 'dsh-desktop-error' }, state.error))
-      const view = state.value
+      if (state.loading && !state.value) {
+        return h('div', { className: 'dsh-desktop-root' }, h('span', { className: 'dsh-desktop-muted' }, '正在读取插件版本…'))
+      }
+      const view = state.value || { plugins: [] }
       return h('div', { className: 'dsh-desktop-root' }, [
-        h('div', { className: 'dsh-desktop-card' }, [
-          h('div', { className: 'dsh-desktop-row' }, [
-            h('div', { className: 'dsh-desktop-title dsh-desktop-grow' }, 'Hang 的插件'),
-            h('button', { className: 'dsh-desktop-btn dsh-desktop-btn-primary', disabled: busy !== null, onClick: sync }, busy === 'sync' ? '同步并重载中…' : '同步并重载'),
-          ]),
-          h('div', { className: 'dsh-desktop-muted dsh-desktop-mono' }, view.repoPath),
-          h('div', { className: 'dsh-desktop-row' }, [
-            h('span', null, view.repoExists ? 'commit ' + (view.commit || '未知') : '尚未下载插件仓库'),
-            view.sync?.state === 'failed' ? h('span', { className: 'dsh-desktop-error' }, view.sync.error) : null,
-          ]),
+        h('div', { className: 'dsh-desktop-row' }, [
+          h('span', { className: 'dsh-desktop-muted dsh-desktop-grow' }, '每个插件独立安装、更新和停用。版本变更后会重启 APP。'),
+          h('button', { className: 'dsh-desktop-btn', disabled: busy !== null || state.loading, onClick: () => load(true) }, state.loading ? '检查中…' : '检查更新'),
         ]),
-        ...(view.packages || []).map(plugin => {
-          const running = plugin.state === 'running'
-          const disabled = plugin.state === 'disabled'
-          const failed = plugin.state === 'failed'
-          const stateText = running
-            ? (plugin.error ? '运行中（最近重载失败）' : '运行中')
-            : (disabled ? '已停用' : (failed ? '运行失败' : (plugin.state === 'ready' ? '待启用' : '未运行')))
+        ...view.plugins.map(plugin => {
+          const channel = channels[plugin.key] || plugin.channel
+          const release = plugin.releases[channel]
+          const channelChanged = channel !== plugin.channel
+          const primaryAction = plugin.installed ? (channelChanged || plugin.updateAvailable ? 'update' : null) : 'install'
           return h('div', { key: plugin.key, className: 'dsh-plugin-item', style: { flexWrap: 'wrap' } }, [
             h('span', { className: 'dsh-plugin-name' }, plugin.name),
-            plugin.origin === 'local'
-              ? h('span', { className: 'dsh-desktop-badge dsh-plugin-origin-local' }, '本地')
-              : null,
+            channel === 'beta' ? h('span', { className: 'dsh-desktop-badge dsh-desktop-badge-beta' }, 'Beta') : null,
             h('span', { className: 'dsh-plugin-purpose' }, plugin.purpose),
-            h('span', { className: 'dsh-desktop-badge' + (running ? ' dsh-desktop-badge-on' : '') }, stateText),
-            h('button', { className: 'dsh-desktop-btn', disabled: busy !== null, onClick: () => toggle(plugin) }, busy === plugin.key ? '处理中…' : (running ? '停用' : (failed ? '重试' : '启用'))),
-            plugin.error
-              ? h('div', { className: 'dsh-desktop-error dsh-desktop-mono', style: { flexBasis: '100%' } }, (plugin.error.phase ? plugin.error.phase + '：' : '') + plugin.error.message)
-              : null,
+            h('select', {
+              className: 'dsh-plugin-channel',
+              value: channel,
+              disabled: busy !== null,
+              onChange: event => setChannels(value => ({ ...value, [plugin.key]: event.currentTarget.value })),
+            }, [
+              h('option', { key: 'stable', value: 'stable', disabled: !plugin.releases.stable }, '正式版'),
+              h('option', { key: 'beta', value: 'beta', disabled: !plugin.releases.beta }, 'Beta'),
+            ]),
+            h('span', { className: 'dsh-desktop-badge' + (plugin.enabled ? ' dsh-desktop-badge-on' : '') }, plugin.enabled ? '运行中' : '未启用'),
+            primaryAction ? h('button', {
+              className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+              disabled: busy !== null || !release,
+              onClick: () => mutate(plugin, primaryAction),
+            }, busy === plugin.key + ':' + primaryAction ? '处理中…' : (plugin.installed ? '更新' : '启用')) : null,
+            plugin.installed ? h('button', {
+              className: 'dsh-desktop-btn',
+              disabled: busy !== null,
+              onClick: () => mutate(plugin, 'remove'),
+            }, busy === plugin.key + ':remove' ? '处理中…' : '停用') : null,
+            h('div', { className: 'dsh-desktop-muted', style: { flexBasis: '100%' } }, plugin.installedVersion
+              ? '当前 ' + plugin.installedVersion + (release ? ' · 最新 ' + release.version : '')
+              : (release ? '可安装 ' + release.version : '这个频道还没有版本')),
           ])
         }),
+        state.error ? h('div', { className: 'dsh-desktop-error' }, state.error) : null,
         message ? h('div', { className: message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-error' }, message.text) : null,
       ])
     }
 
     function apply(ctx) {
-      let disposed = false
-      let retryTimer = null
-      let retries = 30
-      const scheduleReconcile = (delay = 0) => {
-        if (disposed) return
-        if (retryTimer !== null) clearTimeout(retryTimer)
-        retryTimer = setTimeout(async () => {
-          retryTimer = null
-          try {
-            const result = await api('/plugins/reconcile', { method: 'POST' })
-            const errors = await activatePlugins(ctx, result.activations)
-            if ((result.pending || result.activations.length === 0 || errors.length > 0) && retries-- > 0) scheduleReconcile(500)
-          } catch (error) {
-            console.error('[dsh-desktop-runtime] 插件自动挂载失败：', error)
-            if (retries-- > 0) scheduleReconcile(500)
-          }
-        }, delay)
-      }
-
-      ctx.on('connection/reset', () => {
-        retries = 30
-        scheduleReconcile()
-      })
       ctx.effect(() => {
         const disposeStyles = installStyles()
         const disposeIcons = installSettingsNavIcons()
-        scheduleReconcile()
         const slots = ctx.get('slots')
-        const disposeEmptyPluginAction = slots.inject('sidebar.footer.action', () => slots.register(
-          { name: 'sidebar.footer.action', id: 'dsh-desktop-empty-plugin' },
-          props => h(EmptyPluginAction, { ...props, ctx }),
-        ))
         const disposePlugins = slots.inject('settings.section', () => slots.register(
           { name: 'settings.section', id: 'plugin-store', order: 25, label: 'Hang 的插件' },
-          () => h(PluginSection, { ctx }),
+          () => h(PluginSection),
         ))
         const disposeApp = slots.inject('settings.section', () => slots.register(
           { name: 'settings.section', id: 'dsh-app', order: 30, label: 'Desktop App' },
           () => h(AppSection),
         ))
         return () => {
-          disposed = true
-          if (retryTimer !== null) clearTimeout(retryTimer)
-          if (typeof disposeEmptyPluginAction === 'function') disposeEmptyPluginAction()
           if (typeof disposePlugins === 'function') disposePlugins()
           if (typeof disposeApp === 'function') disposeApp()
           disposeIcons()
           disposeStyles()
         }
-      }, 'dsh-desktop-runtime: App 设置、插件同步与可信自动挂载')
+      }, 'hang-dsh-plugins: 插件目录与 Desktop App 设置')
     }
 
     return { inject, apply }

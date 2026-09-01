@@ -1,10 +1,8 @@
-// quota-monitor —— HOST 半（当前最新版，2026-08-31）
-//
-// 本文件内容即为 cordis_define 的 code.host 函数体：
-// Agent 重放时把整个文件内容原样作为 code.host 传入即可。
-// 运行效果：侧边栏底部显示当前模型 provider 的用量/余额（配额 /v1/usage、DeepSeek /user/balance）。
-return {
-  inject: ['subprocess', 'settings', 'timer'],
+'use strict'
+
+// 侧边栏底部显示当前模型 provider 的用量/余额。
+module.exports = {
+  inject: ['subprocess', 'settings', 'timer', 'webServer'],
   apply(ctx) {
     const creds = ctx.get('credentials')
     const settings = ctx.get('settings')
@@ -157,7 +155,7 @@ return {
       }
     }, 300000)
 
-    harness.handle('quota.snapshot', async (args) => {
+    const snapshot = async (args) => {
       // 按当前模型 provider 匹配数据源（provider 命名差异由 SOURCES 别名覆盖）
       const selection = args && args.selection
       const current = selection && typeof selection.provider === 'string'
@@ -172,6 +170,33 @@ return {
         entries.push(record.entry)
       }
       return { capturedAt, current, entries }
-    })
+    }
+
+    const webServer = ctx.get('webServer')
+    ctx.effect(() => webServer.register({
+      kind: 'exact',
+      path: '/api/hanger/quota',
+      handler: async (request, response) => {
+        if (request.method !== 'GET') {
+          response.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' })
+          response.end(JSON.stringify({ ok: false, error: 'Method Not Allowed' }))
+          return
+        }
+        try {
+          const url = new URL(request.url, 'http://localhost')
+          const provider = url.searchParams.get('provider')
+          const model = url.searchParams.get('model')
+          const value = await snapshot({
+            selection: provider ? { provider, model: model || '' } : null,
+            allowStale: url.searchParams.get('allowStale') === '1',
+          })
+          response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+          response.end(JSON.stringify({ ok: true, value }))
+        } catch (error) {
+          response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+          response.end(JSON.stringify({ ok: false, error: error.message || String(error) }))
+        }
+      },
+    }), 'dsh-quota-monitor: /api/hanger/quota')
   },
 }

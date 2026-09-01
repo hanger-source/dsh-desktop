@@ -1,6 +1,0 @@
-{
-  "name": "Node REPL",
-  "purpose": "提供持久 JavaScript 运行环境，跨调用保留变量和模块",
-  "idPrefix": "nodr",
-  "matchPrefix": ["nodr"]
-}

@@ -1,0 +1,3 @@
+- insert:
+    - id: hanger-quota-monitor
+      name: '@hanger-source/dsh-quota-monitor'

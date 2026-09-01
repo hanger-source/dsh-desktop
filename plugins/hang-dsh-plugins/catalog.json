@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "repository": "hanger-source/dsh-desktop",
+  "plugins": [
+    {
+      "key": "conversation-experience",
+      "package": "@hanger-source/dsh-conversation-experience",
+      "name": "会话体验",
+      "purpose": "优化终端工具展示和排队消息的多行编辑体验",
+      "tagPrefix": "plugin-conversation-experience-v"
+    },
+    {
+      "key": "quota-monitor",
+      "package": "@hanger-source/dsh-quota-monitor",
+      "name": "订阅/余额",
+      "purpose": "显示 OpenCode Go 订阅用量和 DeepSeek 官方余额",
+      "tagPrefix": "plugin-quota-monitor-v"
+    },
+    {
+      "key": "node-repl",
+      "package": "@hanger-source/dsh-node-repl",
+      "name": "Node REPL",
+      "purpose": "为 DSH 提供持久 Node.js REPL 工具",
+      "tagPrefix": "plugin-node-repl-v"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+- insert:
+    - id: hanger-node-repl
+      name: '@hanger-source/dsh-node-repl'

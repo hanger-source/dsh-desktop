@@ -1,0 +1,30 @@
+{
+  "name": "@hanger-source/hang-dsh-plugins",
+  "version": "0.1.0-beta.1",
+  "description": "Hang 的 DSH 插件目录与安装管理界面",
+  "license": "MIT",
+  "main": "host/index.js",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host",
+    "client.js",
+    "catalog.json",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}

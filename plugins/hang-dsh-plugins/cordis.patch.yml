@@ -1,0 +1,3 @@
+- insert:
+    - id: hang-dsh-plugins
+      name: '@hanger-source/hang-dsh-plugins'

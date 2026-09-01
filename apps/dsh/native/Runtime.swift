@@ -8,7 +8,6 @@ enum Env {
     static var dshHome: String {
         ProcessInfo.processInfo.environment["DSH_HOME"] ?? home + "/.dsh"
     }
-    static var desktopRepo: String { dshHome + "/dsh-desktop" }
     static var runtimeDir: String { dshHome + "/runtime/dsh-desktop" }
 
     static func commandEnvironment(executable: String, additionalExecutables: [String] = []) -> [String: String] {
@@ -38,7 +37,7 @@ struct RuntimeLaunch {
     let dsh: String
     let node: String
     let npm: String?
-    let overlay: String
+    let pnpm: String
 }
 
 enum StepResult {
@@ -63,17 +62,25 @@ final class RuntimeInstaller {
             case .failure(let error):
                 completion(.failure(error))
             case .success(let tools):
-                status("正在准备 DSH Desktop", "正在装配 App 自带运行时…", nil)
-                do {
-                    let overlay = try self.generateOverlay()
-                    completion(.success(RuntimeLaunch(
-                        dsh: tools.dsh,
-                        node: tools.node,
-                        npm: tools.npm,
-                        overlay: overlay
-                    )))
-                } catch {
-                    completion(.failure(error))
+                self.ensurePnpm(tools: tools, status: status) { pnpmResult in
+                    switch pnpmResult {
+                    case .failure(let error):
+                        completion(.failure(error))
+                    case .success(let prepared):
+                        self.ensurePluginManager(tools: prepared, status: status) { managerResult in
+                            switch managerResult {
+                            case .failure(let error):
+                                completion(.failure(error))
+                            case .success:
+                                completion(.success(RuntimeLaunch(
+                                    dsh: prepared.dsh,
+                                    node: prepared.node,
+                                    npm: prepared.npm,
+                                    pnpm: prepared.pnpm!
+                                )))
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -83,6 +90,7 @@ final class RuntimeInstaller {
         let dsh: String
         let node: String
         let npm: String?
+        let pnpm: String?
     }
 
     private func ensureDsh(
@@ -92,7 +100,7 @@ final class RuntimeInstaller {
         let node = findExecutable(nodeCandidates())
         let npm = findExecutable(npmCandidates())
         if let dsh = findExecutable(dshCandidates()), let node {
-            completion(.success(Tools(dsh: dsh, node: node, npm: npm)))
+            completion(.success(Tools(dsh: dsh, node: node, npm: npm, pnpm: findExecutable(pnpmCandidates()))))
             return
         }
         guard let node else {
@@ -121,45 +129,97 @@ final class RuntimeInstaller {
                 completion(.failure(self.messageError("npm 安装成功，但全局 bin 目录中没有 dsh。\n\n" + self.logTail("install.log"))))
                 return
             }
-            completion(.success(Tools(dsh: dsh, node: node, npm: npm)))
+            completion(.success(Tools(dsh: dsh, node: node, npm: npm, pnpm: self.findExecutable(self.pnpmCandidates()))))
         }
     }
 
-    private func generateOverlay() throws -> String {
-        guard let resources = Bundle.main.resourceURL else {
-            throw messageError("DSH.app 缺少 Resources 目录。")
+    private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
+    private let pluginManagerVersion = "0.1.0-beta.1"
+
+    private func ensurePnpm(
+        tools: Tools,
+        status: @escaping (String, String, String?) -> Void,
+        completion: @escaping (Result<Tools, Error>) -> Void
+    ) {
+        if let pnpm = tools.pnpm {
+            completion(.success(Tools(dsh: tools.dsh, node: tools.node, npm: tools.npm, pnpm: pnpm)))
+            return
         }
-        let runtime = resources.appendingPathComponent("runtime")
-        let templatePath = runtime.appendingPathComponent("web-boot.yml").path
-        let hostPath = runtime.appendingPathComponent("host/index.js").path
-        let clientPath = runtime.appendingPathComponent("client").path
-        guard FileManager.default.isReadableFile(atPath: hostPath) else {
-            throw messageError("DSH.app 缺少内置 Host runtime：\n\(hostPath)")
+        guard let npm = tools.npm else {
+            completion(.failure(messageError("找不到 pnpm，且没有可用于安装 pnpm 的 npm。")))
+            return
         }
-        guard FileManager.default.isReadableFile(atPath: clientPath + "/package.json") else {
-            throw messageError("DSH.app 缺少内置 Client runtime：\n\(clientPath)")
-        }
-        let modulePath = Env.dshHome + "/profiles/web/node_modules/@hanger/dsh-desktop-runtime"
-        let moduleParent = (modulePath as NSString).deletingLastPathComponent
-        try FileManager.default.createDirectory(atPath: moduleParent, withIntermediateDirectories: true)
-        if FileManager.default.fileExists(atPath: modulePath) {
-            let resolved = URL(fileURLWithPath: modulePath).resolvingSymlinksInPath().path
-            if resolved != clientPath {
-                try FileManager.default.removeItem(atPath: modulePath)
-                try FileManager.default.createSymbolicLink(atPath: modulePath, withDestinationPath: clientPath)
+        status("正在准备插件运行时", "DSH 的正式插件命令需要 pnpm，正在安装 pnpm 10。", "pnpm-install.log")
+        runCommand(
+            executable: npm,
+            arguments: ["install", "-g", "pnpm@10", "--registry=https://registry.npmjs.org", "--loglevel=info"],
+            environment: Env.commandEnvironment(executable: npm, additionalExecutables: [tools.node]),
+            logName: "pnpm-install.log",
+            timeout: 300
+        ) { result in
+            if case .failure(let reason) = result {
+                completion(.failure(self.messageError("pnpm 安装失败：\(reason)\n\n" + self.logTail("pnpm-install.log"))))
+                return
             }
-        } else {
-            try FileManager.default.createSymbolicLink(atPath: modulePath, withDestinationPath: clientPath)
+            guard let pnpm = self.findExecutable(self.pnpmCandidates(npm: npm)) else {
+                completion(.failure(self.messageError("npm 安装成功，但全局 bin 目录中没有 pnpm。\n\n" + self.logTail("pnpm-install.log"))))
+                return
+            }
+            completion(.success(Tools(dsh: tools.dsh, node: tools.node, npm: tools.npm, pnpm: pnpm)))
         }
-        let template = try String(contentsOfFile: templatePath, encoding: .utf8)
-        guard template.contains("__DSH_DESKTOP_HOST__") else {
-            throw messageError("overlay 模板缺少 __DSH_DESKTOP_HOST__ 占位符：\n\(templatePath)")
+    }
+
+    private func ensurePluginManager(
+        tools: Tools,
+        status: @escaping (String, String, String?) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        if installedPluginManagerVersion() == pluginManagerVersion && profileHasPluginManagerBundle() {
+            completion(.success(()))
+            return
         }
-        try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
-        let output = Env.runtimeDir + "/web-boot.generated.yml"
-        let content = template.replacingOccurrences(of: "__DSH_DESKTOP_HOST__", with: hostPath)
-        try content.write(toFile: output, atomically: true, encoding: .utf8)
-        return output
+        guard let pnpm = tools.pnpm else {
+            completion(.failure(messageError("pnpm 尚未准备完成。")))
+            return
+        }
+        let defaultSpec = "github:hanger-source/dsh-desktop#plugin-hang-dsh-plugins-v\(pluginManagerVersion)&path:/plugins/hang-dsh-plugins"
+        let spec = ProcessInfo.processInfo.environment["DSH_PLUGIN_MANAGER_SPEC"] ?? defaultSpec
+        status("正在准备 Hang 的插件", "正在通过 dsh plugin 安装 Desktop 插件管理器…", "plugin-manager-install.log")
+        runCommand(
+            executable: tools.dsh,
+            arguments: ["plugin", "--profile", "web", "add", spec, "--save-exact"],
+            environment: Env.commandEnvironment(executable: tools.dsh, additionalExecutables: [tools.node, pnpm] + (tools.npm.map { [$0] } ?? [])),
+            logName: "plugin-manager-install.log",
+            timeout: 300
+        ) { result in
+            if case .failure(let reason) = result {
+                completion(.failure(self.messageError("Hang 的插件管理器安装失败：\(reason)\n\n" + self.logTail("plugin-manager-install.log"))))
+                return
+            }
+            guard self.installedPluginManagerVersion() == self.pluginManagerVersion,
+                  self.profileHasPluginManagerBundle() else {
+                completion(.failure(self.messageError("dsh plugin 已退出成功，但管理器没有进入 web profile。\n\n" + self.logTail("plugin-manager-install.log"))))
+                return
+            }
+            completion(.success(()))
+        }
+    }
+
+    private func installedPluginManagerVersion() -> String? {
+        let path = Env.dshHome + "/profiles/web/node_modules/@hanger-source/hang-dsh-plugins/package.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
+        return json["version"] as? String
+    }
+
+    private func profileHasPluginManagerBundle() -> Bool {
+        let path = Env.dshHome + "/profiles/web/package.json"
+        guard let data = FileManager.default.contents(atPath: path),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dsh = json["dsh"] as? [String: Any],
+              let profile = dsh["profile"] as? [String: Any],
+              let bundles = profile["bundles"] as? [String] else { return false }
+        return bundles.contains(pluginManagerName)
     }
 
     private func runCommand(
@@ -239,6 +299,19 @@ final class RuntimeInstaller {
         ]
     }
 
+    private func pnpmCandidates(npm: String? = nil) -> [String] {
+        var candidates = [
+            "/opt/homebrew/bin/pnpm",
+            "/usr/local/bin/pnpm",
+            Env.home + "/.local/bin/pnpm",
+            Env.home + "/.local/share/fnm/aliases/default/bin/pnpm",
+        ]
+        if let npm {
+            candidates.insert(URL(fileURLWithPath: npm).deletingLastPathComponent().appendingPathComponent("pnpm").path, at: 0)
+        }
+        return candidates
+    }
+
     private func logTail(_ name: String) -> String {
         let path = Env.runtimeDir + "/" + name
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
@@ -284,13 +357,11 @@ final class ServerManager {
             try Data().write(to: URL(fileURLWithPath: logPath), options: .atomic)
             logHandle = FileHandle(forWritingAtPath: logPath)
 
-            let executables = [launch.node] + (launch.npm.map { [$0] } ?? [])
+            let executables = [launch.node, launch.pnpm] + (launch.npm.map { [$0] } ?? [])
             var environment = Env.commandEnvironment(executable: launch.dsh, additionalExecutables: executables)
             environment["DSH_HOME"] = Env.dshHome
             environment["DSH_PARENT_PID"] = String(ProcessInfo.processInfo.processIdentifier)
-            environment["DSH_DESKTOP_REPO"] = Env.desktopRepo
             environment["DSH_DESKTOP_RUNTIME"] = Env.runtimeDir
-            environment["DSH_DESKTOP_REMOTE"] = "https://github.com/hanger-source/dsh-desktop.git"
             environment["DSH_DESKTOP_GITHUB"] = "hanger-source/dsh-desktop"
             environment["DSH_APP_VERSION"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
             environment["DSH_APP_BUNDLE_PATH"] = Bundle.main.bundlePath
@@ -299,7 +370,7 @@ final class ServerManager {
 
             let child = Process()
             child.executableURL = URL(fileURLWithPath: launch.dsh)
-            child.arguments = ["--profile", "web", "--patch", launch.overlay, "--no-open"]
+            child.arguments = ["--profile", "web", "--no-open"]
             child.environment = environment
             child.standardOutput = logHandle
             child.standardError = logHandle

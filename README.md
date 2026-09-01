@@ -1,100 +1,86 @@
 # DSH Desktop
 
-DSH Desktop 是 DeepSeek Harness 的 macOS 桌面产品仓库。它同时保存 App 源码与随 App 发布的静态运行时、Hang 的插件源码和技能；但三类更新各自拥有独立版本与生效边界，不再互相伪装成同一种“插件更新”。
+这个仓库同时发布 DSH macOS App 和 Hang 的 DSH 插件，但两者使用不同的版本与更新链路。
 
-## 三个更新域
+## 更新边界
 
-| 更新对象 | 版本来源 | 发布与同步 | 生效方式 |
+| 对象 | 版本 | 分发 | 生效 |
 |---|---|---|---|
-| DSH.app + App runtime | `CFBundleShortVersionString` / `dsh-app-v*` | GitHub Actions 构建 GitHub Release（DMG + ZIP） | 安装新 App 后重启 App |
-| Hang 插件与技能 | Git commit | App 后台同步仓库；设置 → Hang 的插件可手动“同步并重载” | 当前 dsh 进程和当前页面直接 update，不重启 App |
-| `@deepseek-ai/dsh` | npm semver | npmjs | 更新完成后重启 App，启动新的 dsh 进程 |
+| DSH.app | `dsh-app-v*` | GitHub Actions 构建 DMG/ZIP Release | App 自动更新后重启 |
+| `hang-dsh-plugins` | `plugin-hang-dsh-plugins-v*` | App 启动前通过 `dsh plugin --profile web add github:...&path:/plugins/hang-dsh-plugins` 确保安装 | 随 App 版本固定 |
+| 功能插件 | `plugin-<key>-v*` | 设置 → Hang 的插件，逐个通过正式 DSH Bundle 安装 | 操作完成后重启 App |
+| `@deepseek-ai/dsh` | npm semver | npmjs | 更新完成后重启 App |
 
-App runtime 是 DSH.app 的组成部分，不是 Hang 插件。只有 `plugins/` 目录下的扩展才进入动态 Cordis registry；插件所需的 Host/Client 源码和随附资源都保存在各自的插件目录中，由同一条仓库同步链加载。
+App 不携带私有 DSH overlay，不 clone 插件仓库，也不把源码放进 `~/.dsh/dsh-desktop`。用户机器只保留标准 web profile、pnpm 安装结果和运行日志。
 
 ## 目录
 
 ```text
-apps/dsh/
-  native/                 # AppKit + WKWebView 原生壳、构建脚本和图标
-  runtime/
-    host/                 # App 状态、版本、仓库同步、插件定义和父进程生命周期
-    client/               # App 设置、Hang 插件设置、可信自动挂载与页面内 update
-    web-boot.yml          # App 专属 dsh web overlay
-plugins/
-  conversation-experience/ # 会话工具展示与排队消息体验
-  node-repl/              # Cordis 动态插件：独立 Node REPL MCP（macOS arm64）
-  quota-monitor/          # 订阅用量与余额
-skills/                   # 随插件仓库同步到 ~/.dsh/skills
-.github/workflows/
-  build-dsh-app.yml       # 写入版本、构建闭包、打 DMG/ZIP、发布 Release
-bootstrap.sh              # 新机器：同步仓库/技能并安装 Release App
-install.sh                # 下载 Release DMG 并安装到 ~/Applications
-launch-web.sh             # 使用已安装 App runtime 的开发诊断入口
+apps/dsh/native/                 # AppKit + WKWebView 原生壳与构建脚本
+plugins/catalog.json             # 功能插件目录
+plugins/hang-dsh-plugins/        # App 自动安装的隐藏管理 Bundle
+plugins/conversation-experience/ # 会话体验 Bundle
+plugins/quota-monitor/           # 订阅/余额 Bundle
+plugins/node-repl/               # Node REPL Bundle 与随包二进制
+.github/workflows/build-dsh-app.yml
+launch-web.sh                    # 本仓库源码的本地 web profile 诊断入口
 ```
 
-本机运行目录同样分开：
+每个 `plugins/<key>` 都是可独立安装的 npm package 根目录，提交中已包含运行产物，不需要 Git 安装时执行 `prepare`。
+
+## 插件版本与频道
+
+正式版和 Beta 都使用不可变 tag：
 
 ```text
-~/Applications/DSH.app                 # App 与随 App 发布的 runtime
-~/.dsh/dsh-desktop/                    # Git 插件/技能源码副本
-~/.dsh/runtime/dsh-desktop/            # 日志、generated overlay、停用插件状态
-~/.dsh/skills/                         # dsh 实际读取的技能
+plugin-conversation-experience-v0.2.0
+plugin-conversation-experience-v0.3.0-beta.1
 ```
 
-## 打开 App 后的链路
+管理页默认选择正式版；只有尚未发布正式版或用户主动选择时才使用 Beta，并在条目名称旁显示短的 `Beta` 标记。分支仅用于开发验证，不作为用户更新源。
 
-1. 原生 App 检查 Node.js 与正式安装的 `dsh`；仅在缺少 dsh 时通过对应 npm 安装 `@deepseek-ai/dsh@latest`。缺少 Node/npm 或安装失败会留在启动页并显示日志，不先打开空 WKWebView。
-2. App 只从自身 `Contents/Resources/runtime` 生成 overlay，把静态 Host/Client runtime 装入 web profile；启动不依赖插件仓库里是否存在 App Hub。
-3. dsh web 启动后，App runtime 在后台同步 `~/.dsh/dsh-desktop` 和技能。网络或 Git 同步失败只让插件域显示失败，不阻止 DSH 主界面启动。
-4. 首个 Agent 就绪后，Host runtime 扫描仓库的 `plugins/`，为每个 Hang 动态插件定义最新 Package。
-5. 静态 Client runtime 比较当前页面已加载的 `packageId`：未加载就 `run`，源码变化就 `update`。这条可信 App 链不创建审批请求，因此页面刷新、App 重启和 dsh 重启后都会自动恢复插件。
-6. App 退出时终止自己持有的 dsh 子进程；Host runtime 也监控 App 父进程，App 被强杀后不会留下孤儿服务。
-
-## 安装
-
-普通用户从 Releases 下载 `DSH.dmg`，把 DSH.app 拖到 Applications。当前使用 ad-hoc 签名，另一台 Mac 第一次打开可能需要在“系统设置 → 隐私与安全性”点击“仍要打开”。
-
-仓库安装入口：
+插件安装格式：
 
 ```bash
-bash bootstrap.sh
+dsh plugin --profile web add \
+  'github:hanger-source/dsh-desktop#plugin-conversation-experience-v0.2.0&path:/plugins/conversation-experience'
 ```
 
-`install.sh` 只安装 CI Release，不会在用户机器上调用 `swiftc` 重新生成 App。
+开发分支也可以安装，前提是分支已推送：
+
+```bash
+dsh plugin --profile web add \
+  'github:hanger-source/dsh-desktop#heads/feat/example&path:/plugins/conversation-experience'
+```
+
+## App 启动链
+
+1. 检查 Node.js 与 `dsh`；缺少 dsh 时通过 npmjs 安装 `@deepseek-ai/dsh@latest`。
+2. 检查 pnpm；缺少时通过 npm 安装 `pnpm@10`。
+3. 检查 web profile 是否已经安装 App 指定版本的 `@hanger-source/hang-dsh-plugins`，不一致时通过正式 `dsh plugin` 命令安装。
+4. 直接运行 `dsh --profile web --no-open`，不再生成 overlay。
+5. 管理 Bundle 从 GitHub tags 读取每个插件的正式版/Beta 最新版本；启用、更新、停用分别落到 web profile 的 package 依赖与 bundle 列表，然后重启 App。
+
+App 退出时仍会终止自己持有的 dsh 子进程；管理 Bundle 也监控 App 父进程，避免留下孤儿服务。
+
+## 本地验证
+
+```bash
+DSH_HOME="$(mktemp -d)" bash launch-web.sh --port 3091
+```
+
+`launch-web.sh` 只把本地 `hang-dsh-plugins` 以 `file:` package 装入指定 profile。其余功能插件在“设置 → Hang 的插件”中逐个启用。
 
 ## App Release
 
-Actions → **Release DSH Desktop**：
+插件发布使用 Actions → **Release DSH Plugin**：选择插件并输入与其 `package.json` 一致的 semver。CI 会检查会话插件构建产物、执行 `npm pack --dry-run`，然后在当前提交创建 `plugin-<key>-v<version>` 不可变 tag。带 prerelease 的 semver 自动进入 Beta 频道；普通 semver 进入正式频道，不额外上传 tgz 或创建 Release 资产。
 
-- 版本留空：在现有 `dsh-app-v*` Release 上递增 patch。
-- 输入 `0.2.0`：发布 `dsh-app-v0.2.0`。
-- 手动推送 `dsh-app-v*` tag：构建该版本。
+App 发布使用 Actions → **Release DSH Desktop**：
 
-CI 在构建前确定版本并写入 Info.plist，检查 App binary、完整静态 runtime 和 ad-hoc 签名，然后发布：
+- 版本留空：在现有 `dsh-app-v*` Release 上递增 patch；
+- 输入 `0.3.0`：发布 `dsh-app-v0.3.0`；
+- 推送 `dsh-app-v*` tag：构建对应版本。
 
-- `DSH.dmg`：人工下载安装；
-- `DSH.app.zip`：脚本或调试下载；
-- `SHA256SUMS.txt`：传输完整性检查。
+发布前必须先存在 App 所绑定的 `plugin-hang-dsh-plugins-v*` tag。CI 校验管理器 tag、App binary、Info.plist 版本和 ad-hoc 签名，然后发布 `DSH.dmg`、`DSH.app.zip` 与 `SHA256SUMS.txt`。
 
-失败的构建、版本、签名、tag 或 Release 操作会让 workflow 失败，不会用 `|| true` 伪装成功。
-
-## 插件同步与重载
-
-设置 → Hang 的插件 → **同步并重载** 完成一条操作：
-
-```text
-git pull --ff-only
-  → 同步 skills
-  → 比较插件最新源码与当前 Package
-  → define 新 Package（仅变化的插件）
-  → 当前页面 startUserRun(update)
-```
-
-插件的启用/停用状态写在 `~/.dsh/runtime/dsh-desktop/disabled-plugins.json`。主动停用的插件不会在下一次 App 启动时被自动开启；其他插件会自动恢复并且不重复审批。
-
-## dsh 更新与重启
-
-设置 → App → `@deepseek-ai/dsh` 显示已安装与 npm 最新版本。“更新并重启 APP”先更新全局 npm 包，成功后通过原生桥重启整个 App；因此原生窗口、dsh web、静态 runtime 和动态插件会在同一个新进程闭包内重新装配。
-
-⌘R 只刷新当前页面并重新挂载 Client half，不更新 App binary，也不重启 dsh 服务。
+普通用户下载 DMG 后拖入 Applications。当前使用 ad-hoc 签名，另一台 Mac 首次打开可能需要在“系统设置 → 隐私与安全性”中允许打开。

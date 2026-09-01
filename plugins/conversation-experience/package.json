@@ -1,0 +1,24 @@
+{
+  "name": "@hanger-source/dsh-conversation-experience",
+  "version": "0.1.0-beta.1",
+  "description": "DSH 会话工具展示、思考滚动与排队消息体验",
+  "license": "MIT",
+  "scripts": {
+    "build": "node build-client.mjs",
+    "check": "node build-client.mjs --check"
+  },
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": ["index.js", "client.js", "cordis.patch.yml"],
+  "dsh": {
+    "bundle": { "patch": "./cordis.patch.yml" },
+    "client": {
+      "platform": "web",
+      "inject": ["@deepseek-ai/dsh-client-ui-conversation"]
+    }
+  }
+}

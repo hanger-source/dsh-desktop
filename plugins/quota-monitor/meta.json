@@ -1,1 +1,0 @@
-{ "name": "订阅/余额", "purpose": "显示 OpenCode Go 订阅用量和 DeepSeek 官方余额", "idPrefix": "quota", "matchPrefix": ["quota"] }

@@ -1,0 +1,65 @@
+name: Release DSH Plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin:
+        description: Plugin package
+        required: true
+        type: choice
+        options:
+          - hang-dsh-plugins
+          - conversation-experience
+          - quota-monitor
+          - node-repl
+      version:
+        description: Semver, for example 0.2.0 or 0.3.0-beta.1
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify package and tag
+        id: release
+        env:
+          PLUGIN: ${{ inputs.plugin }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || {
+            echo "无效 semver：$VERSION" >&2
+            exit 1
+          }
+          package="plugins/$PLUGIN/package.json"
+          test -f "$package"
+          actual="$(jq -r .version "$package")"
+          [ "$actual" = "$VERSION" ] || {
+            echo "$package 的版本是 $actual，不是 $VERSION" >&2
+            exit 1
+          }
+          tag="plugin-$PLUGIN-v$VERSION"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "tag 已存在：$tag" >&2
+            exit 1
+          fi
+          if [ "$PLUGIN" = conversation-experience ]; then
+            npm --prefix "plugins/$PLUGIN" run check
+          fi
+          (cd "plugins/$PLUGIN" && npm pack --dry-run --json) >/tmp/plugin-pack.json
+          jq -e '.[0].files | length > 0' /tmp/plugin-pack.json >/dev/null
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Create immutable plugin tag
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
