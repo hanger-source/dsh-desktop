@@ -1,7 +1,6 @@
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 import { fileURLToPath } from 'node:url'
-import { defineTool } from '@deepseek-ai/dsh-tools'
 
 const packageDirectory = dirname(fileURLToPath(import.meta.url))
 const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
@@ -268,60 +267,11 @@ const plugin = {
       return [{ type: 'text', text: resultText(value) }]
     }
 
-    function supportedSchema(input, root) {
-      if (!input || typeof input !== 'object') return { type: 'json' }
-      const schema = {}
-      for (const key of ['description', 'title', 'default', 'examples']) {
-        if (input[key] !== undefined) schema[key] = input[key]
-      }
-      if (Array.isArray(input.oneOf)) {
-        schema.oneOf = input.oneOf.map(branch => supportedSchema(branch, false))
-        return schema
-      }
-      if (typeof input.type !== 'string') return Object.assign(schema, { type: 'json' })
-
-      schema.type = input.type
-      if (Array.isArray(input.enum)) schema.enum = input.enum
-      if (input.const !== undefined) schema.const = input.const
-      if (input.type === 'array' && input.items) {
-        schema.items = supportedSchema(input.items, false)
-      }
-      if (input.type === 'object') {
-        schema.properties = {}
-        const properties = input.properties && typeof input.properties === 'object'
-          ? input.properties
-          : {}
-        const required = new Set(Array.isArray(input.required) ? input.required : [])
-        for (const name of Object.keys(properties)) {
-          schema.properties[name] = supportedSchema(properties[name], false)
-          if (required.has(name)) schema.properties[name].required = true
-        }
-        if (!root && typeof input.additionalProperties === 'boolean') {
-          schema.additionalProperties = input.additionalProperties
-        }
-      }
-      return schema
-    }
-
-    function parameterSchema(inputSchema) {
-      // defineTool 的参数根是隐式开放对象，因此这里返回字段表；JSON
-      // Schema 的 required 数组被下沉为统一 DSL 的逐字段 required 标记。
-      const properties = inputSchema && inputSchema.properties && typeof inputSchema.properties === 'object'
-        ? inputSchema.properties
-        : {}
-      const required = new Set(Array.isArray(inputSchema && inputSchema.required) ? inputSchema.required : [])
-      return Object.fromEntries(Object.entries(properties).map(([name, value]) => {
-        const schema = supportedSchema(value, false)
-        if (required.has(name)) schema.required = true
-        return [name, schema]
-      }))
-    }
-
     try {
       const initialized = await request('initialize', {
         protocolVersion: '2025-11-25',
         capabilities: {},
-        clientInfo: { name: 'dsh-node-repl', version: '0.1.0' },
+        clientInfo: { name: 'dsh-node-repl', version: '0.1.1' },
       }, 15000)
       send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })
 
@@ -332,13 +282,13 @@ const plugin = {
       for (const tool of tools) {
         if (!tool || typeof tool.name !== 'string' || !tool.inputSchema) continue
         const publicName = 'mcp__node_repl__' + tool.name
-        const definition = defineTool({
+        const definition = {
           name: publicName,
           description: String(tool.description || ('Node REPL MCP tool: ' + tool.name)),
-          parameters: parameterSchema(tool.inputSchema),
+          parameters: tool.inputSchema,
           timeoutMs: 300000,
           output: {
-            schema: { type: 'json' },
+            schema: {},
             render: renderResult,
           },
           async execute(args) {
@@ -349,7 +299,7 @@ const plugin = {
             if (result && result.isError === true) throw new Error(resultText(result))
             return persistResultImages(result)
           },
-        })
+        }
         toolDisposers.push(ctx.tools.register(definition))
       }
 
