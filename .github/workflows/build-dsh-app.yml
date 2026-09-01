@@ -55,10 +55,10 @@ jobs:
       - name: Verify plugin manager release
         run: |
           set -euo pipefail
-          tag='plugin-hang-dsh-plugins-v0.1.0-beta.4'
+          tag='plugin-hang-dsh-plugins-v0.1.0-beta.5'
           git cat-file -e "$tag^{commit}"
           version="$(git show "$tag:plugins/hang-dsh-plugins/package.json" | jq -r .version)"
-          [ "$version" = '0.1.0-beta.4' ] || { echo "插件管理器 tag 版本不一致：$version" >&2; exit 1; }
+          [ "$version" = '0.1.0-beta.5' ] || { echo "插件管理器 tag 版本不一致：$version" >&2; exit 1; }
 
       - name: Build App
         env:
