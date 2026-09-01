@@ -158,6 +158,15 @@ return {
       return [{ type: 'text', text: resultText(value) }]
     }
 
+    function parameterSchema(inputSchema) {
+      const schema = JSON.parse(JSON.stringify(inputSchema))
+      // DSH 的工具参数根由 ToolRuntime 统一定义为开放对象；MCP server
+      // 返回的根 additionalProperties:false 不能直接覆盖这条运行时契约。
+      // 只移除根约束，字段、required 以及嵌套对象的约束全部原样保留。
+      if (schema && schema.type === 'object') delete schema.additionalProperties
+      return schema
+    }
+
     try {
       const initialized = await request('initialize', {
         protocolVersion: '2025-11-25',
@@ -176,7 +185,7 @@ return {
         const definition = harness.defineTool({
           name: publicName,
           description: String(tool.description || ('Node REPL MCP tool: ' + tool.name)),
-          parameters: tool.inputSchema,
+          parameters: parameterSchema(tool.inputSchema),
           timeoutMs: 300000,
           output: {
             schema: { type: 'json' },
