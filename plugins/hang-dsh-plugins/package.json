@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/hang-dsh-plugins",
-  "version": "0.1.0-beta.5",
+  "version": "0.1.0-beta.6",
   "description": "Hang 的 DSH 插件目录与安装管理界面",
   "license": "MIT",
   "main": "host/index.js",

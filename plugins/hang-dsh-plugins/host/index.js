@@ -6,6 +6,7 @@ const Path = require('node:path')
 const { ProfilePluginRepository } = require('./plugins.js')
 const { VersionService } = require('./versions.js')
 const { readJsonBody, sendJson } = require('./process.js')
+const packageManifest = require('../package.json')
 
 module.exports = {
   inject: ['webServer'],
@@ -28,6 +29,7 @@ module.exports = {
     })
     const versions = new VersionService({
       appVersion: process.env.DSH_APP_VERSION,
+      pluginManagerVersion: packageManifest.version,
       appBundlePath: process.env.DSH_APP_BUNDLE_PATH,
       dshExecutable,
       npmExecutable: process.env.DSH_NPM_EXECUTABLE,

@@ -40,6 +40,7 @@ function compareVersions(left, right) {
 class VersionService {
   constructor(options) {
     this.appVersion = normalizeVersion(options.appVersion) || '0.0.0'
+    this.pluginManagerVersion = normalizeVersion(options.pluginManagerVersion) || null
     this.appBundlePath = options.appBundlePath
     this.dshExecutable = options.dshExecutable
     this.npmExecutable = options.npmExecutable
@@ -52,7 +53,16 @@ class VersionService {
   async status(force = false) {
     if (!force && this.cache && Date.now() - this.cacheAt < 5 * 60_000) return this.cache
     const [app, dsh] = await Promise.all([this.appStatus(), this.dshStatus()])
-    this.cache = { app, dsh, checkedAt: new Date().toISOString() }
+    this.cache = {
+      app,
+      pluginManager: {
+        installed: this.pluginManagerVersion,
+        enabled: true,
+        managedByApp: true,
+      },
+      dsh,
+      checkedAt: new Date().toISOString(),
+    }
     this.cacheAt = Date.now()
     return this.cache
   }
