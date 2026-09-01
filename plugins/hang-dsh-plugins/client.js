@@ -46,6 +46,14 @@ window.__ModuleLoader__.load({
         '.dsh-plugin-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
         '.dsh-plugin-name{font-weight:600;color:var(--dsw-alias-label-primary)}',
         '.dsh-plugin-purpose{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-tertiary)}',
+        '.hHd-Xa_footArea{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:end!important;column-gap:8px!important}',
+        '.hHd-Xa_footerActions{display:contents!important}',
+        '.hHd-Xa_settingsArea{grid-column:2!important;grid-row:2!important;width:auto!important;margin:0!important;padding:0!important}',
+        '.hHd-Xa_settingsArea>*{margin:0!important}',
+        '.hHd-Xa_collapsed .hHd-Xa_footArea{display:flex!important;justify-content:center!important;align-items:center!important}',
+        '.mq-root{grid-column:1/-1!important;grid-row:1!important}',
+        '.Nqubda_layer{width:auto!important;margin:0!important}',
+        '.Nqubda_badgeLabel{display:none!important}',
         '.dsh-settings-nav-plugin-store>svg,.dsh-settings-nav-app>svg{display:none}',
         '.dsh-settings-nav-plugin-store::before,.dsh-settings-nav-app::before{content:"";width:16px;height:16px;flex:none;background:currentColor;-webkit-mask-image:var(--dsh-settings-nav-icon);-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:16px 16px;mask-image:var(--dsh-settings-nav-icon);mask-position:center;mask-repeat:no-repeat;mask-size:16px 16px}',
         '.dsh-settings-nav-plugin-store{--dsh-settings-nav-icon:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Crect x=%272%27 y=%272%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Crect x=%279%27 y=%272%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Crect x=%272%27 y=%279%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Cpath d=%27M11.5 9v5M9 11.5h5%27/%3E%3C/svg%3E")}',
@@ -190,6 +198,8 @@ window.__ModuleLoader__.load({
       const [message, setMessage] = React.useState(null)
 
       const load = React.useCallback(async (force = false) => {
+        setState(previous => ({ ...previous, loading: true, error: null }))
+        if (force) setMessage({ kind: 'info', text: '正在检查插件更新…' })
         try {
           const value = await api('/plugins' + (force ? '?force=1' : ''))
           setState({ loading: false, value, error: null })
@@ -197,8 +207,17 @@ window.__ModuleLoader__.load({
             plugin.key,
             current[plugin.key] || plugin.channel,
           ])))
+          if (force) {
+            const count = value.plugins.filter(plugin => plugin.updateAvailable).length
+            setMessage({
+              kind: 'ok',
+              text: count > 0 ? `检查完成，${count} 个插件可以更新。` : '检查完成，所有插件已是最新。',
+            })
+          }
         } catch (error) {
-          setState(previous => ({ loading: false, value: previous.value, error: error.message || String(error) }))
+          const text = error.message || String(error)
+          setState(previous => ({ loading: false, value: previous.value, error: text }))
+          if (force) setMessage({ kind: 'error', text: '检查更新失败：' + text })
         }
       }, [])
       React.useEffect(() => { load(false) }, [load])
@@ -211,8 +230,8 @@ window.__ModuleLoader__.load({
           await api('/plugins/mutate', { method: 'POST', body: { key: plugin.key, action, channel } })
           const bridge = nativeControl()
           if (bridge) {
-            setMessage({ kind: 'ok', text: '插件已处理，正在重启 APP…' })
-            window.setTimeout(() => bridge.postMessage('restart'), 300)
+            setMessage({ kind: 'ok', text: '插件已处理，正在应用…' })
+            window.setTimeout(() => bridge.postMessage({ action: 'reloadService' }), 150)
           } else {
             setMessage({ kind: 'ok', text: '插件已处理，重启 dsh 后生效。' })
             await load(true)
@@ -229,7 +248,7 @@ window.__ModuleLoader__.load({
       const view = state.value || { plugins: [] }
       return h('div', { className: 'dsh-desktop-root' }, [
         h('div', { className: 'dsh-desktop-row' }, [
-          h('span', { className: 'dsh-desktop-muted dsh-desktop-grow' }, '每个插件独立安装、更新和停用。版本变更后会重启 APP。'),
+          h('span', { className: 'dsh-desktop-muted dsh-desktop-grow' }, '每个插件独立安装、更新和停用，变更后自动应用。'),
           h('button', { className: 'dsh-desktop-btn', disabled: busy !== null || state.loading, onClick: () => load(true) }, state.loading ? '检查中…' : '检查更新'),
         ]),
         ...view.plugins.map(plugin => {
@@ -267,7 +286,11 @@ window.__ModuleLoader__.load({
           ])
         }),
         state.error ? h('div', { className: 'dsh-desktop-error' }, state.error) : null,
-        message ? h('div', { className: message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-error' }, message.text) : null,
+        message ? h('div', {
+          className: message.kind === 'error'
+            ? 'dsh-desktop-error'
+            : message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-muted',
+        }, message.text) : null,
       ])
     }
 

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var webView: WKWebView!
     private var startupPage: StartupPageController!
     private var appliedPageTheme: String?
+    private var currentLaunch: RuntimeLaunch?
     private let appUpdateController = AppUpdateController()
     private lazy var webNavigationController = WebNavigationController(
         onFinish: { [weak self] webView in
@@ -43,6 +44,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 case .failure(let error):
                     self.startupPage.showStatus(title: "DeepSeek Harness 准备失败", detail: error.localizedDescription, isError: true)
                 case .success(let launch):
+                    self.currentLaunch = launch
                     self.startupPage.showProgress(title: "正在启动 DeepSeek Harness", detail: "正式 dsh 已就绪，正在启动 web 服务…", logName: "server.log")
                     ServerManager.shared.start(launch: launch) { result in
                         self.handleStartup(result)
@@ -272,6 +274,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.reload()
     }
 
+    private func reloadService() {
+        guard let launch = currentLaunch else {
+            startupPage.showStatus(title: "插件应用失败", detail: "DSH 运行时尚未准备完成。", isError: true)
+            return
+        }
+        ServerManager.shared.restart(launch: launch) { [weak self] result in
+            guard let self else { return }
+            switch result {
+            case .ready(let url):
+                self.webView.load(URLRequest(url: url))
+            case .failure(let message):
+                self.startupPage.showStatus(title: "插件应用失败", detail: message, isError: true)
+            }
+        }
+    }
+
     @objc private func openReleases(_ sender: Any?) {
         NSWorkspace.shared.open(URL(string: "https://github.com/hanger-source/dsh-desktop/releases")!)
     }
@@ -282,7 +300,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 restartApplication(nil)
                 return
             }
-            if let command = message.body as? [String: Any], appUpdateController.handle(command) { return }
+            if let command = message.body as? [String: Any] {
+                if command["action"] as? String == "reloadService" {
+                    reloadService()
+                    return
+                }
+                if appUpdateController.handle(command) { return }
+            }
         }
         guard message.name == "dshAppearance",
               let theme = message.body as? String,

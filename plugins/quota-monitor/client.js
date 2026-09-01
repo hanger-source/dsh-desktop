@@ -14,12 +14,9 @@ window.__ModuleLoader__.load({
     const plugin = {
   inject: ['slots', 'timer', 'sessions', 'modelDirectories'],
   apply(ctx) {
-    // 用量面板横跨整个 footer；底部一行保留 Cordis 插件状态在左、设置在右。
+    // 这里只负责用量内容；侧边栏 footer 的整体布局由 Hang 的插件统一管理。
     styles.insert('\n' +
-      '.hHd-Xa_footArea{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:end!important;column-gap:8px!important}' +
-      '.hHd-Xa_footerActions{display:contents!important}' +
-      '.hHd-Xa_settingsArea{grid-column:2!important;grid-row:2!important}' +
-      '.mq-root{grid-column:1/-1;display:flex;flex-direction:column;gap:5px;width:100%;box-sizing:border-box;padding:8px 6px 6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary)}' +
+      '.mq-root{display:flex;flex-direction:column;gap:5px;width:100%;box-sizing:border-box;padding:8px 6px 6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary)}' +
       '.mq-head{display:flex;align-items:baseline;gap:6px}' +
       '.mq-name{font-size:13px;font-weight:700;color:var(--dsw-alias-label-primary);letter-spacing:.01em}' +
       '.mq-updated{margin-left:auto;font-size:10px;color:var(--dsw-alias-label-tertiary)}' +

@@ -2,7 +2,7 @@
 
 // 侧边栏底部显示当前模型 provider 的用量/余额。
 module.exports = {
-  inject: ['subprocess', 'settings', 'timer', 'webServer'],
+  inject: ['credentials', 'subprocess', 'settings', 'timer', 'webServer'],
   apply(ctx) {
     const creds = ctx.get('credentials')
     const settings = ctx.get('settings')
@@ -72,8 +72,8 @@ module.exports = {
     // key = 当前会话模型选择的 provider 名，别名覆盖实际命名差异
     const SOURCES = {
       'opencode-go': { settingsNs: 'llm-pi-ai', fetch: fetchOpencodeGo, meta: { provider: 'opencode-go', kind: 'subscription', displayName: 'OpenCode Go' } },
-      'deepseek': { settingsNs: 'llm-deepseek', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
-      'deepseek-official': { settingsNs: 'llm-deepseek', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+      'deepseek': { settingsNs: 'llm-deepseek', defaultRef: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
+      'deepseek-official': { settingsNs: 'llm-deepseek', defaultRef: 'DEEPSEEK_API_KEY', fetch: fetchDeepseek, meta: { provider: 'deepseek', kind: 'prepaid', displayName: 'DeepSeek 官方' } },
     }
 
     function credentialRef(provider, source) {
@@ -82,7 +82,7 @@ module.exports = {
       const profile = source.settingsNs === 'llm-pi-ai'
         ? section && section.providers && section.providers[provider]
         : section
-      const ref = profile && profile.apiKeyEnv
+      const ref = profile && profile.apiKeyEnv || source.defaultRef
       return typeof ref === 'string' && ref.length > 0 ? ref : null
     }
 
