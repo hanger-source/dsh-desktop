@@ -1,0 +1,6 @@
+{
+  "name": "Node REPL",
+  "purpose": "为当前 Cordis 会话提供持久 JavaScript REPL 工具",
+  "idPrefix": "nodr",
+  "matchPrefix": ["nodr"]
+}

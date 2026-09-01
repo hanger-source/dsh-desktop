@@ -10,7 +10,7 @@ DSH Desktop 是 DeepSeek Harness 的 macOS 桌面产品仓库。它同时保存 
 | Hang 插件与技能 | Git commit | App 后台同步仓库；设置 → Hang 的插件可手动“同步并重载” | 当前 dsh 进程和当前页面直接 update，不重启 App |
 | `@deepseek-ai/dsh` | npm semver | npmjs | 更新完成后重启 App，启动新的 dsh 进程 |
 
-App runtime 是 DSH.app 的组成部分，不是 Hang 插件。它没有动态 `pluginId`、不依附某个 Agent、不进入审批队列，也不会显示在“Hang 的插件”列表。只有 `plugins/` 目录下的扩展才进入动态 Cordis registry。
+App runtime 是 DSH.app 的组成部分，不是 Hang 插件。只有 `plugins/` 目录下的扩展才进入动态 Cordis registry；插件所需的 Host/Client 源码和随附资源都保存在各自的插件目录中，由同一条仓库同步链加载。
 
 ## 目录
 
@@ -22,7 +22,9 @@ apps/dsh/
     client/               # App 设置、Hang 插件设置、可信自动挂载与页面内 update
     web-boot.yml          # App 专属 dsh web overlay
 plugins/
-  quota-monitor/          # 真正的 Hang 动态插件；以后新增插件也只放这里
+  conversation-experience/ # 会话工具展示与排队消息体验
+  node-repl/              # Cordis 动态插件：独立 Node REPL MCP（macOS arm64）
+  quota-monitor/          # 订阅用量与余额
 skills/                   # 随插件仓库同步到 ~/.dsh/skills
 .github/workflows/
   build-dsh-app.yml       # 写入版本、构建闭包、打 DMG/ZIP、发布 Release
@@ -45,7 +47,7 @@ launch-web.sh             # 使用已安装 App runtime 的开发诊断入口
 1. 原生 App 检查 Node.js 与正式安装的 `dsh`；仅在缺少 dsh 时通过对应 npm 安装 `@deepseek-ai/dsh@latest`。缺少 Node/npm 或安装失败会留在启动页并显示日志，不先打开空 WKWebView。
 2. App 只从自身 `Contents/Resources/runtime` 生成 overlay，把静态 Host/Client runtime 装入 web profile；启动不依赖插件仓库里是否存在 App Hub。
 3. dsh web 启动后，App runtime 在后台同步 `~/.dsh/dsh-desktop` 和技能。网络或 Git 同步失败只让插件域显示失败，不阻止 DSH 主界面启动。
-4. 首个 Agent 就绪后，Host runtime 只扫描仓库的 `plugins/`，为每个实际插件定义最新 Package。
+4. 首个 Agent 就绪后，Host runtime 扫描仓库的 `plugins/`，为每个 Hang 动态插件定义最新 Package。
 5. 静态 Client runtime 比较当前页面已加载的 `packageId`：未加载就 `run`，源码变化就 `update`。这条可信 App 链不创建审批请求，因此页面刷新、App 重启和 dsh 重启后都会自动恢复插件。
 6. App 退出时终止自己持有的 dsh 子进程；Host runtime 也监控 App 父进程，App 被强杀后不会留下孤儿服务。
 

@@ -1,0 +1,11 @@
+{
+  "source": "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node_repl",
+  "chatgptVersion": "26.825.51511",
+  "chatgptBuild": "7377",
+  "platform": "darwin",
+  "architecture": "arm64",
+  "bytes": 17547632,
+  "sha256": "15db54a5a9decfea4ad6e03f08a1ceb2b4809e2f096afbf6000703fd8641b315",
+  "signer": "Developer ID Application: OpenAI OpCo, LLC (2DC432GLL2)",
+  "signatureTimestamp": "2026-08-30T07:25:18+08:00"
+}
