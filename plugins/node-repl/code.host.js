@@ -158,13 +158,45 @@ return {
       return [{ type: 'text', text: resultText(value) }]
     }
 
-    function parameterSchema(inputSchema) {
-      const schema = JSON.parse(JSON.stringify(inputSchema))
-      // DSH 的工具参数根由 ToolRuntime 统一定义为开放对象；MCP server
-      // 返回的根 additionalProperties:false 不能直接覆盖这条运行时契约。
-      // 只移除根约束，字段、required 以及嵌套对象的约束全部原样保留。
-      if (schema && schema.type === 'object') delete schema.additionalProperties
+    function supportedSchema(input, root) {
+      if (!input || typeof input !== 'object') return { type: 'json' }
+      const schema = {}
+      for (const key of ['description', 'title', 'default', 'examples']) {
+        if (input[key] !== undefined) schema[key] = input[key]
+      }
+      if (Array.isArray(input.oneOf)) {
+        schema.oneOf = input.oneOf.map(branch => supportedSchema(branch, false))
+        return schema
+      }
+      if (typeof input.type !== 'string') return Object.assign(schema, { type: 'json' })
+
+      schema.type = input.type
+      if (Array.isArray(input.enum)) schema.enum = input.enum
+      if (input.const !== undefined) schema.const = input.const
+      if (input.type === 'array' && input.items) {
+        schema.items = supportedSchema(input.items, false)
+      }
+      if (input.type === 'object') {
+        schema.properties = {}
+        const properties = input.properties && typeof input.properties === 'object'
+          ? input.properties
+          : {}
+        for (const name of Object.keys(properties)) {
+          schema.properties[name] = supportedSchema(properties[name], false)
+        }
+        if (Array.isArray(input.required)) schema.required = input.required
+        if (!root && typeof input.additionalProperties === 'boolean') {
+          schema.additionalProperties = input.additionalProperties
+        }
+      }
       return schema
+    }
+
+    function parameterSchema(inputSchema) {
+      // DSH 的工具参数根由 ToolRuntime 统一定义为开放对象。这里把 MCP
+      // JSON Schema 投影到它支持的统一 DSL；根开放性由 DSH 负责，嵌套
+      // 对象、字段类型、required、枚举和说明仍保持 server 的原始契约。
+      return supportedSchema(inputSchema, true)
     }
 
     try {
