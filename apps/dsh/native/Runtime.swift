@@ -152,7 +152,7 @@ final class RuntimeInstaller {
     }
 
     private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
-    private let pluginManagerVersion = "0.1.0-beta.10"
+    private let pluginManagerVersion = "0.1.0"
 
     private func ensurePnpm(
         tools: Tools,

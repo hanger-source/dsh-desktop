@@ -46,6 +46,7 @@ window.__ModuleLoader__.load({
         '.dsh-desktop-btn:hover{background:var(--dsw-alias-interactive-bg-hover)}',
         '.dsh-desktop-btn-primary{border-color:transparent;background:var(--dsw-alias-button-primary-fill);color:var(--dsw-alias-label-primary-foreground)}',
         '.dsh-desktop-btn-primary:hover{background:var(--dsw-alias-button-primary-hover)}',
+        '.dsh-desktop-btn-ok{border-color:transparent;background:var(--dsw-alias-state-success-tertiary);color:var(--dsw-alias-state-success-primary)}',
         '.dsh-desktop-btn:disabled{opacity:.5;cursor:default}',
         '.dsh-desktop-badge{box-sizing:border-box;display:inline-flex;align-items:center;justify-content:center;flex:none;height:26px;padding:0 10px;border-radius:999px;font-size:11px;line-height:1;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary)}',
         '.dsh-plugin-channel{appearance:none!important;box-sizing:border-box!important;flex:none!important;width:86px!important;min-width:86px!important;max-width:86px!important;border:1px solid var(--dsw-alias-border-l2);border-radius:8px;padding:4px 22px 4px 9px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit}',
@@ -150,21 +151,22 @@ window.__ModuleLoader__.load({
         error: null,
       })
       const [checking, setChecking] = React.useState({})
+      const [checkFeedback, setCheckFeedback] = React.useState({})
       const [busy, setBusy] = React.useState(null)
       const [message, setMessage] = React.useState(null)
-      const messageTimer = React.useRef(null)
+      const feedbackTimers = React.useRef({})
 
-      const flashMessage = React.useCallback(text => {
-        if (messageTimer.current) window.clearTimeout(messageTimer.current)
-        setMessage({ kind: 'ok', text })
-        messageTimer.current = window.setTimeout(() => {
-          messageTimer.current = null
-          setMessage(null)
+      const flashLatest = React.useCallback(key => {
+        if (feedbackTimers.current[key]) window.clearTimeout(feedbackTimers.current[key])
+        setCheckFeedback(previous => ({ ...previous, [key]: true }))
+        feedbackTimers.current[key] = window.setTimeout(() => {
+          delete feedbackTimers.current[key]
+          setCheckFeedback(previous => ({ ...previous, [key]: false }))
         }, 2500)
       }, [])
 
       React.useEffect(() => () => {
-        if (messageTimer.current) window.clearTimeout(messageTimer.current)
+        for (const timer of Object.values(feedbackTimers.current)) window.clearTimeout(timer)
       }, [])
 
       const load = React.useCallback(async () => {
@@ -180,7 +182,7 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => { load() }, [load])
 
-      const check = async (key, endpoint, label) => {
+      const check = async (key, endpoint) => {
         setChecking(previous => ({ ...previous, [key]: true }))
         try {
           const result = await api('/status/' + endpoint)
@@ -190,7 +192,7 @@ window.__ModuleLoader__.load({
             return { loading: false, value, error: null }
           })
           const error = key === 'dsh' ? result.latestError : result.error
-          if (!error && result.updateAvailable === false) flashMessage(label + ' 已是最新。')
+          if (!error && result.updateAvailable === false) flashLatest(key)
         } catch (error) {
           setState(previous => ({ ...previous, error: error.message || String(error) }))
         } finally {
@@ -286,7 +288,11 @@ window.__ModuleLoader__.load({
             status('app', app.installed, app.latest, app.updateAvailable, app.error),
           ]),
           h('div', { className: 'dsh-desktop-row dsh-version-actions' }, [
-            h('button', { className: 'dsh-desktop-btn', disabled: state.loading || checking.app, onClick: () => check('app', 'app', 'DSH Desktop') }, checking.app ? '检查中…' : '检查更新'),
+            h('button', {
+              className: 'dsh-desktop-btn' + (checkFeedback.app ? ' dsh-desktop-btn-ok' : ''),
+              disabled: state.loading || checking.app,
+              onClick: () => check('app', 'app'),
+            }, checking.app ? '检查中…' : (checkFeedback.app ? '已是最新' : '检查更新')),
             app.updateAvailable
               ? h('button', {
                   className: 'dsh-desktop-btn dsh-desktop-btn-primary',
@@ -320,10 +326,10 @@ window.__ModuleLoader__.load({
                   onClick: updatePluginManager,
                 }, busy === 'plugin-manager' ? '正在更新…' : '更新')
               : h('button', {
-                  className: 'dsh-desktop-btn',
+                  className: 'dsh-desktop-btn' + (checkFeedback.pluginManager ? ' dsh-desktop-btn-ok' : ''),
                   disabled: state.loading || busy === 'plugin-manager' || checking.pluginManager,
-                  onClick: () => check('pluginManager', 'plugin-manager', 'Hang DSH Plugins'),
-                }, checking.pluginManager ? '检查中…' : '检查更新'),
+                  onClick: () => check('pluginManager', 'plugin-manager'),
+                }, checking.pluginManager ? '检查中…' : (checkFeedback.pluginManager ? '已是最新' : '检查更新')),
           ]),
           h('div', { className: 'dsh-desktop-muted dsh-version-detail' }, '由 Desktop App 安装、更新和修复，不经过插件自身的管理链路。'),
         ]),
@@ -334,10 +340,10 @@ window.__ModuleLoader__.load({
           ]),
           h('div', { className: 'dsh-desktop-row dsh-version-actions' }, [
             h('button', {
-              className: 'dsh-desktop-btn',
+              className: 'dsh-desktop-btn' + (checkFeedback.dsh ? ' dsh-desktop-btn-ok' : ''),
               disabled: state.loading || checking.dsh,
-              onClick: () => check('dsh', 'dsh', '@deepseek-ai/dsh'),
-            }, checking.dsh ? '检查中…' : '检查更新'),
+              onClick: () => check('dsh', 'dsh'),
+            }, checking.dsh ? '检查中…' : (checkFeedback.dsh ? '已是最新' : '检查更新')),
             dsh.updateAvailable ? h('button', {
               className: 'dsh-desktop-btn dsh-desktop-btn-primary',
               disabled: busy === 'dsh',

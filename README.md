@@ -7,8 +7,8 @@
 | 对象 | 版本 | 分发 | 生效 |
 |---|---|---|---|
 | DSH.app | `dsh-app-v*` | GitHub Actions 构建 DMG/ZIP Release | App 自动更新后重启 |
-| `hang-dsh-plugins` | `plugin-hang-dsh-plugins-v*` | App 启动前通过 `dsh plugin --profile web add github:...&path:/plugins/hang-dsh-plugins` 确保安装 | 随 App 版本固定 |
-| 功能插件 | `plugin-<key>-v*` | 设置 → Hang 的插件，逐个通过正式 DSH Bundle 安装 | 操作完成后重启 App |
+| `hang-dsh-plugins` | `plugin-hang-dsh-plugins-v*` | App 启动前通过 `dsh plugin --profile web add github:...&path:/plugins/hang-dsh-plugins` 确保最低兼容版本；后续由 Desktop App 页面独立更新 | 重载 dsh 服务 |
+| 功能插件 | `plugin-<key>-v*` | 设置 → Hang 的插件，逐个通过正式 DSH Bundle 安装 | 自动重载 dsh 服务 |
 | `@deepseek-ai/dsh` | npm semver | npmjs | 更新完成后重启 App |
 
 App 不携带私有 DSH overlay，不 clone 插件仓库，也不把源码放进 `~/.dsh/dsh-desktop`。用户机器只保留标准 web profile、pnpm 安装结果和运行日志。
@@ -57,9 +57,9 @@ dsh plugin --profile web add \
 
 1. 检查 Node.js 与 `dsh`；缺少 dsh 时通过 npmjs 安装 `@deepseek-ai/dsh@latest`。
 2. 检查 pnpm；缺少时通过 npm 安装 `pnpm@10`。
-3. 检查 web profile 是否已经安装 App 指定版本的 `@hanger-source/hang-dsh-plugins`，不一致时通过正式 `dsh plugin` 命令安装。
+3. 检查 web profile 是否已经安装 App 要求的最低版本 `@hanger-source/hang-dsh-plugins`，缺失或版本过低时通过正式 `dsh plugin` 命令安装。
 4. 直接运行 `dsh --profile web --no-open`，不再生成 overlay。
-5. 管理 Bundle 从 GitHub tags 读取每个插件的正式版/Beta 最新版本；启用、更新、停用分别落到 web profile 的 package 依赖与 bundle 列表，然后重启 App。
+5. 管理 Bundle 仅在用户点击检查更新或执行安装时读取 GitHub tags；启用、更新、停用分别落到 web profile 的 package 依赖与 bundle 列表，然后由 App 重载 dsh 服务，不重启 App 进程。
 
 App 退出时仍会终止自己持有的 dsh 子进程；管理 Bundle 也监控 App 父进程，避免留下孤儿服务。
 

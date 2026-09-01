@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/dsh-quota-monitor",
-  "version": "0.1.0-beta.2",
+  "version": "0.1.0",
   "description": "DSH OpenCode Go 订阅用量与 DeepSeek 官方余额",
   "license": "MIT",
   "main": "index.js",

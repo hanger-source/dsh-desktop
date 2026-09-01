@@ -173,16 +173,30 @@ class VersionService {
     let checksumUrl = null
     let error = null
     try {
-      const feed = await requestText('https://github.com/' + this.repository + '/releases.atom')
-      const entries = feed.match(/<entry>[\s\S]*?<\/entry>/g) || []
-      const entry = entries.find(value => /Repository\/\d+\/dsh-app-v\d+\.\d+\.\d+<\/id>/.test(value))
-      const tag = entry && /Repository\/\d+\/(dsh-app-v\d+\.\d+\.\d+)<\/id>/.exec(entry)?.[1]
-      if (tag) {
-        latest = normalizeVersion(tag)
-        releaseUrl = 'https://github.com/' + this.repository + '/releases/tag/' + tag
-        assetUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/DSH.dmg'
-        checksumUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/SHA256SUMS.txt'
+      const prefix = 'dsh-app-v'
+      const result = await run('git', [
+        'ls-remote', '--tags', '--refs', 'https://github.com/' + this.repository + '.git',
+      ], {
+        env: this.commandEnvironment,
+        timeoutMs: 30_000,
+        maxBytes: 2 * 1024 * 1024,
+      })
+      if (result.exitCode !== 0) {
+        throw new Error((result.stderr || result.stdout || 'git ls-remote exit ' + result.exitCode).trim())
       }
+      latest = result.stdout.split('\n')
+        .map(line => line.split('\trefs/tags/')[1] || '')
+        .filter(value => value.startsWith(prefix))
+        .map(value => normalizeVersion(value.slice(prefix.length)))
+        .filter(Boolean)
+        .sort(compareVersions)
+        .at(-1) || null
+      if (!latest) throw new Error('没有找到 DSH Desktop release tag')
+      const tag = prefix + latest
+      releaseUrl = 'https://github.com/' + this.repository + '/releases/tag/' + tag
+      assetUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/DSH.dmg'
+      checksumUrl = 'https://github.com/' + this.repository + '/releases/download/' + tag + '/SHA256SUMS.txt'
+      if (compareVersions(this.appVersion, latest) < 0) await requestText(checksumUrl)
     } catch (caught) {
       error = caught.message
     }

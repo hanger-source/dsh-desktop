@@ -105,6 +105,10 @@ window.__ModuleLoader__.load({
 
       React.useEffect(() => {
         let active = true
+        if (!provider) {
+          setError(null)
+          return () => { active = false }
+        }
         if (provider && snapshots.current.has(provider)) setSnap(snapshots.current.get(provider))
         else setSnap(null)
         const load = async (allowStale) => {
@@ -127,7 +131,7 @@ window.__ModuleLoader__.load({
         }
       }, [provider])
 
-      if (!wide) return null
+      if (!wide || (!provider && !snap)) return null
 
       if (error) {
         return React.createElement('div', { className: 'mq-root' },
@@ -141,6 +145,8 @@ window.__ModuleLoader__.load({
           React.createElement('span', null, '正在读取用量…'))
       }
 
+      if (entries.length === 0) return null
+
       const e = entries[0]
       const updated = snap && snap.capturedAt
         ? '更新于 ' + new Date(snap.capturedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
@@ -150,10 +156,10 @@ window.__ModuleLoader__.load({
         React.createElement('span', { className: 'mq-name' }, e && e.displayName),
         updated ? React.createElement('span', { className: 'mq-updated' }, updated) : null)
 
-      if (!e || e.ok === false) {
+      if (e.ok === false) {
         return React.createElement('div', { className: 'mq-root' },
           head,
-          React.createElement('span', { className: 'mq-err' }, e ? e.error : '未检测到已配置的用量数据源'))
+          React.createElement('span', { className: 'mq-err' }, e.error))
       }
 
       const body = []

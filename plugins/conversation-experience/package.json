@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/dsh-conversation-experience",
-  "version": "0.1.0-beta.1",
+  "version": "0.1.0",
   "description": "DSH 会话工具展示、思考滚动与排队消息体验",
   "license": "MIT",
   "scripts": {
