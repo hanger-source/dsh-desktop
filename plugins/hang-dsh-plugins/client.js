@@ -46,14 +46,20 @@ window.__ModuleLoader__.load({
         '.dsh-plugin-item{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;background:var(--dsw-alias-bg-layer-1)}',
         '.dsh-plugin-name{font-weight:600;color:var(--dsw-alias-label-primary)}',
         '.dsh-plugin-purpose{flex:1;min-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--dsw-alias-label-tertiary)}',
+        '.hHd-Xa_root:not(.hHd-Xa_collapsed){padding-bottom:0!important}',
         '.hHd-Xa_footArea{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;align-items:end!important;column-gap:8px!important}',
         '.hHd-Xa_footerActions{display:contents!important}',
         '.hHd-Xa_settingsArea{grid-column:2!important;grid-row:2!important;width:auto!important;margin:0!important;padding:0!important}',
         '.hHd-Xa_settingsArea>*{margin:0!important}',
         '.hHd-Xa_collapsed .hHd-Xa_footArea{display:flex!important;justify-content:center!important;align-items:center!important}',
         '.mq-root{grid-column:1/-1!important;grid-row:1!important}',
-        '.Nqubda_layer{width:auto!important;margin:0!important}',
+        '.Nqubda_layer{grid-column:1!important;grid-row:2!important;width:auto!important;margin:0!important}',
         '.Nqubda_badgeLabel{display:none!important}',
+        '.dsh-cordis-empty{grid-column:1;grid-row:2;position:relative;min-width:0}',
+        '.dsh-cordis-empty-button{appearance:none;display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 8px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);font:12px/16px inherit;cursor:pointer}',
+        '.dsh-cordis-empty-button:hover,.dsh-cordis-empty-button[data-active]{background:var(--dsw-alias-interactive-bg-hover)}',
+        '.dsh-cordis-empty-popover{position:absolute;left:0;bottom:44px;z-index:30;width:240px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 32px rgb(0 0 0 / 14%)}',
+        '.dsh-cordis-empty-title{font-size:13px;font-weight:650;color:var(--dsw-alias-label-primary)}',
         '.dsh-settings-nav-plugin-store>svg,.dsh-settings-nav-app>svg{display:none}',
         '.dsh-settings-nav-plugin-store::before,.dsh-settings-nav-app::before{content:"";width:16px;height:16px;flex:none;background:currentColor;-webkit-mask-image:var(--dsh-settings-nav-icon);-webkit-mask-position:center;-webkit-mask-repeat:no-repeat;-webkit-mask-size:16px 16px;mask-image:var(--dsh-settings-nav-icon);mask-position:center;mask-repeat:no-repeat;mask-size:16px 16px}',
         '.dsh-settings-nav-plugin-store{--dsh-settings-nav-icon:url("data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%2716%27 height=%2716%27 viewBox=%270 0 16 16%27 fill=%27none%27 stroke=%27black%27 stroke-width=%271.4%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27%3E%3Crect x=%272%27 y=%272%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Crect x=%279%27 y=%272%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Crect x=%272%27 y=%279%27 width=%275%27 height=%275%27 rx=%271%27/%3E%3Cpath d=%27M11.5 9v5M9 11.5h5%27/%3E%3C/svg%3E")}',
@@ -61,6 +67,41 @@ window.__ModuleLoader__.load({
       ].join('')
       document.head.appendChild(style)
       return () => style.remove()
+    }
+
+    function CordisEmptyAction(props) {
+      const [nativePresent, setNativePresent] = React.useState(() => Boolean(document.querySelector('[data-cordis-badge]')))
+      const [open, setOpen] = React.useState(false)
+      React.useEffect(() => {
+        const inspect = () => setNativePresent(Boolean(document.querySelector('[data-cordis-badge]')))
+        const observer = new MutationObserver(inspect)
+        observer.observe(document.body, { childList: true, subtree: true })
+        inspect()
+        return () => observer.disconnect()
+      }, [])
+      if (nativePresent) return null
+      const wide = !props || props.wide !== false
+      return h('div', { className: 'dsh-cordis-empty' }, [
+        h('button', {
+          key: 'button',
+          type: 'button',
+          className: 'dsh-cordis-empty-button',
+          'data-active': open || undefined,
+          'aria-label': 'Cordis 插件',
+          'aria-expanded': open,
+          onClick: () => setOpen(value => !value),
+        }, [
+          h('svg', { key: 'icon', width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }, [
+            h('path', { key: 'a', d: 'M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3' }),
+            h('path', { key: 'b', d: 'm6.8 3-1.2-1.2M9.2 3l1.2-1.2M6.8 13l-1.2 1.2M9.2 13l1.2 1.2M3 6.8 1.8 5.6M3 9.2l-1.2 1.2M13 6.8l1.2-1.2M13 9.2l1.2 1.2' }),
+          ]),
+          wide ? h('span', { key: 'count' }, '0 running') : null,
+        ]),
+        open ? h('div', { key: 'popover', className: 'dsh-cordis-empty-popover' }, [
+          h('div', { key: 'title', className: 'dsh-cordis-empty-title' }, 'Cordis 插件'),
+          h('div', { key: 'empty', className: 'dsh-desktop-muted' }, '还没有定义任何插件'),
+        ]) : null,
+      ])
     }
 
     function installSettingsNavIcons() {
@@ -307,13 +348,18 @@ window.__ModuleLoader__.load({
           { name: 'settings.section', id: 'dsh-app', order: 30, label: 'Desktop App' },
           () => h(AppSection),
         ))
+        const disposeCordisEmpty = slots.inject('sidebar.footer.action', () => slots.register(
+          { name: 'sidebar.footer.action', id: 'cordis-empty', order: 5 },
+          props => h(CordisEmptyAction, props),
+        ))
         return () => {
           if (typeof disposePlugins === 'function') disposePlugins()
           if (typeof disposeApp === 'function') disposeApp()
+          if (typeof disposeCordisEmpty === 'function') disposeCordisEmpty()
           disposeIcons()
           disposeStyles()
         }
-      }, 'hang-dsh-plugins: 插件目录与 Desktop App 设置')
+      }, 'hang-dsh-plugins: 插件目录、Cordis 入口与 Desktop App 设置')
     }
 
     return { inject, apply }

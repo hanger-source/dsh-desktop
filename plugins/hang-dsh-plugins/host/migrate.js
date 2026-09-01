@@ -6,7 +6,7 @@ const Path = require('node:path')
 const { ProfilePluginRepository } = require('./plugins.js')
 
 const CATALOG = require('../catalog.json')
-const MIGRATION_VERSION = 1
+const MIGRATION_VERSION = 2
 
 function readJson(path, fallback) {
   try {
@@ -56,10 +56,18 @@ async function migrate(options = {}) {
     await repository.mutate(key, 'install', 'beta')
   }
 
+  const current = await repository.list(true)
+  const upgrades = current.plugins.filter(plugin => plugin.installed && plugin.updateAvailable)
+  for (const plugin of upgrades) {
+    log('[migration] updating installed plugin ' + plugin.key + ' channel=' + plugin.channel)
+    await repository.mutate(plugin.key, 'update', plugin.channel)
+  }
+
   const result = {
     version: MIGRATION_VERSION,
     migrated: pending,
     alreadyInstalled: keys.filter(key => !pending.includes(key)),
+    upgraded: upgrades.map(plugin => plugin.key),
     completedAt: new Date().toISOString(),
   }
   Fs.mkdirSync(profileDir, { recursive: true })

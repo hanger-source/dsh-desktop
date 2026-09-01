@@ -141,7 +141,7 @@ final class RuntimeInstaller {
     }
 
     private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
-    private let pluginManagerVersion = "0.1.0-beta.2"
+    private let pluginManagerVersion = "0.1.0-beta.3"
 
     private func ensurePnpm(
         tools: Tools,
@@ -224,7 +224,7 @@ final class RuntimeInstaller {
         status: @escaping (String, String, String?) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        let marker = Env.dshHome + "/profiles/web/.hang-dsh-plugins-migration-v1.json"
+        let marker = Env.dshHome + "/profiles/web/.hang-dsh-plugins-migration-v2.json"
         if FileManager.default.fileExists(atPath: marker) {
             completion(.success(()))
             return
