@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/dsh-node-repl",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "DSH 持久 Node.js REPL 工具",
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,7 @@
     ".": "./index.js",
     "./package.json": "./package.json"
   },
-  "files": ["index.js", "cordis.patch.yml", "vendor"],
+  "files": ["index.js", "mcp-client.js", "result-adapter.js", "tool-specs.js", "cordis.patch.yml", "vendor"],
   "dsh": {
     "bundle": { "patch": "./cordis.patch.yml" }
   }

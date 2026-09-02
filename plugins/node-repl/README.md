@@ -6,7 +6,7 @@
 - `mcp__node_repl__js_add_node_module_dir`
 - `mcp__node_repl__js_reset`
 
-插件通过 Cordis 的 `subprocess` capability 启动随 package 分发的 MCP server，并把 MCP 工具定义直接注册到当前 DSH 宿主的 `ctx.tools`，不安装第二份 ToolRuntime。
+插件将工具注册到每个会话自己的 `agent.ctx.tools`。某个会话第一次调用 REPL 工具时，才以该会话的工作目录启动一份独立 MCP server；同一会话持续复用自己的 JavaScript 内核，不同会话之间不会共享变量、模块路径或 `js_reset`。
 
 MCP 返回图片时，插件通过 Cordis 的 `attachments` capability 将原始 base64 图片持久化，工具结果和后续模型请求只携带 DSH 附件引用。
 
