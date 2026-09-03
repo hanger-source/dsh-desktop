@@ -68,6 +68,8 @@ window.__ModuleLoader__.load({
         '.hHd-Xa_settingsArea>*{width:100%!important;margin:0!important}',
         '.hHd-Xa_settingsArea>div>.VOzbGW_trigger{justify-content:flex-end!important}',
         '.hHd-Xa_collapsed .hHd-Xa_footArea{display:flex!important;justify-content:center!important;align-items:center!important}',
+        '.hHd-Xa_collapsed .hHd-Xa_settingsArea{display:flex!important;align-items:center!important;justify-content:center!important}',
+        '.hHd-Xa_collapsed .hHd-Xa_settingsArea>div>.VOzbGW_trigger{width:36px!important;justify-content:center!important}',
         '.mq-root{grid-column:1/-1!important;grid-row:1!important}',
         '.Nqubda_layer{grid-column:1!important;grid-row:2!important;width:auto!important;margin:0!important}',
         '.Nqubda_badgeLabel{display:none!important}',
@@ -89,6 +91,18 @@ window.__ModuleLoader__.load({
     function CordisEmptyAction(props) {
       const [nativePresent, setNativePresent] = React.useState(() => Boolean(document.querySelector('[data-cordis-badge]')))
       const [open, setOpen] = React.useState(false)
+      const [railPopoverStyle, setRailPopoverStyle] = React.useState(null)
+      const buttonRef = React.useRef(null)
+      const wide = !props || props.wide !== false
+      const placeRailPopover = React.useCallback(() => {
+        const rect = buttonRef.current && buttonRef.current.getBoundingClientRect()
+        if (!rect) return
+        setRailPopoverStyle({
+          position: 'fixed',
+          left: rect.right + 8,
+          bottom: Math.max(8, window.innerHeight - rect.bottom),
+        })
+      }, [])
       React.useEffect(() => {
         const inspect = () => setNativePresent(Boolean(document.querySelector('[data-cordis-badge]')))
         const observer = new MutationObserver(inspect)
@@ -96,18 +110,27 @@ window.__ModuleLoader__.load({
         inspect()
         return () => observer.disconnect()
       }, [])
+      React.useEffect(() => {
+        if (!open || wide) return
+        placeRailPopover()
+        window.addEventListener('resize', placeRailPopover)
+        return () => window.removeEventListener('resize', placeRailPopover)
+      }, [open, wide, placeRailPopover])
 
       if (nativePresent) return null
-      const wide = !props || props.wide !== false
       return h('div', { className: 'dsh-cordis-empty' }, [
         h('button', {
           key: 'button',
+          ref: buttonRef,
           type: 'button',
           className: 'dsh-cordis-empty-button',
           'data-active': open || undefined,
           'aria-label': 'Cordis 插件',
           'aria-expanded': open,
-          onClick: () => setOpen(value => !value),
+          onClick: () => {
+            if (!open && !wide) placeRailPopover()
+            setOpen(value => !value)
+          },
         }, [
           h('svg', { key: 'icon', width: 16, height: 16, viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', strokeWidth: 1.4 }, [
             h('path', { key: 'a', d: 'M8 1.8v3M8 11.2v3M1.8 8h3M11.2 8h3' }),
@@ -115,7 +138,7 @@ window.__ModuleLoader__.load({
           ]),
           wide ? h('span', { key: 'count' }, '0 running') : null,
         ]),
-        open ? h('div', { key: 'popover', className: 'dsh-cordis-empty-popover' }, [
+        open ? h('div', { key: 'popover', className: 'dsh-cordis-empty-popover', style: wide ? undefined : railPopoverStyle }, [
           h('div', { key: 'title', className: 'dsh-cordis-empty-title' }, 'Cordis 插件'),
           h('div', { key: 'empty', className: 'dsh-desktop-muted' }, '还没有定义任何插件'),
         ]) : null,

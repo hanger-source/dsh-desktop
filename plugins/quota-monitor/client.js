@@ -120,7 +120,7 @@ window.__ModuleLoader__.load({
               setError(null)
             }
           } catch (e) {
-            if (active) setError(String((e && e.message) || e))
+            if (active) setError('用量暂时无法更新')
           }
         }
         load(true)
@@ -133,9 +133,9 @@ window.__ModuleLoader__.load({
 
       if (!wide || (!provider && !snap)) return null
 
-      if (error) {
-        return React.createElement('div', { className: 'mq-root' },
-          React.createElement('span', { className: 'mq-err' }, '用量读取失败：' + error))
+      if (error && !snap) {
+        return React.createElement('div', { className: 'mq-root mq-muted' },
+          React.createElement('span', null, error))
       }
 
       const entries = snap && Array.isArray(snap.entries) ? snap.entries : null
@@ -159,7 +159,7 @@ window.__ModuleLoader__.load({
       if (e.ok === false) {
         return React.createElement('div', { className: 'mq-root' },
           head,
-          React.createElement('span', { className: 'mq-err' }, e.error))
+          React.createElement('span', { className: 'mq-muted' }, e.error))
       }
 
       const body = []

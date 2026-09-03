@@ -93,7 +93,9 @@ module.exports = {
       try {
         return await fetcher(resolved.value)
       } catch (e) {
-        return Object.assign({}, meta, { ok: false, error: String((e && e.message) || e) })
+        const detail = String((e && e.message) || e)
+        console.warn('[dsh-quota-monitor] ' + meta.displayName + ' refresh failed: ' + detail)
+        return Object.assign({}, meta, { ok: false, error: '暂时无法更新' })
       }
     }
 
@@ -107,10 +109,13 @@ module.exports = {
       if (pending) return pending
 
       const operation = (async () => {
+        const held = cache.get(key)
         const ref = credentialRef(provider, source)
         const entry = ref
           ? await queryEntry(ref, source.fetch, source.meta)
           : Object.assign({}, source.meta, { ok: false, error: '当前模型未配置凭证引用' })
+        // 短暂的网络失败不应覆盖最后一次有效用量；更新时间仍指向那次成功快照。
+        if (entry.ok === false && held && held.entry && held.entry.ok === true) return held
         const capturedAt = new Date().toISOString()
         const record = { entry, capturedAt, capturedAtMs: Date.now() }
         cache.set(key, record)
