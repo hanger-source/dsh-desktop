@@ -18,7 +18,7 @@ const __dshClientPart0 = (() => {
 // 排队消息 —— Client 半
 // 通过正式 Slot 接管 QueueDock，保留 Session Remote API 作为唯一写入链路。
 return {
-  inject: ['slots', 'sessions'],
+  inject: ['slots', 'conversation', 'sessions', 'uiConversation'],
   apply(ctx) {
     styles.insert(`
       [data-queue-dock]{display:none!important}
@@ -35,6 +35,9 @@ return {
       .dsh-flow-queue-lead{display:grid;flex:none;place-items:center;width:14px;height:18px;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:18px}
       .dsh-flow-queue-preview{display:-webkit-box;flex:1;min-width:0;overflow:hidden;-webkit-box-orient:vertical;-webkit-line-clamp:3;color:var(--dsw-alias-label-primary-dimmed);font:var(--dsw-font-xs-13);line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
       .dsh-flow-queue-preview[data-full="true"]{display:block;overflow:visible}
+      .dsh-flow-queue-thumbs{display:flex;flex:none;align-items:center;gap:4px}
+      .dsh-flow-queue-thumb{display:block;width:32px;height:32px;object-fit:cover;border-radius:6px;background:var(--dsw-alias-bg-base)}
+      .dsh-flow-queue-item[data-submission-echo]{opacity:.72}
       .dsh-flow-queue-actions{display:flex;flex:none;align-items:center;gap:4px}
       .dsh-flow-queue-action{appearance:none;display:grid;flex:none;place-items:center;width:28px;height:28px;padding:0;border:0;border-radius:999px;background:transparent;color:var(--dsw-alias-label-tertiary);font-size:13px;line-height:1;cursor:pointer}
       .dsh-flow-queue-action:hover:not(:disabled){background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-secondary)}
@@ -51,7 +54,8 @@ return {
 
     const slots = ctx.get('slots')
     const sessions = ctx.get('sessions')
-    if (!slots || !sessions) return
+    const uiConversation = ctx.get('uiConversation')
+    if (!slots || !sessions || !uiConversation) return
 
     const icons = {
       queue: {
@@ -100,11 +104,36 @@ return {
       return '包含暂不支持编辑的内容'
     }
 
-    function QueueDock(props) {
-      const inbox = props.useSession(snapshot => snapshot.queue)
+    function queueImageRefs(content) {
+      if (!Array.isArray(content)) return []
+      return content.flatMap(block => block && block.type === 'image' && block.attachment ? [block.attachment] : [])
+    }
+
+    function QueueThumb({ attachment, loadImage }) {
+      const [url, setUrl] = React.useState(null)
+      React.useEffect(() => {
+        let alive = true
+        loadImage(attachment).then(resolved => {
+          if (alive) setUrl(resolved)
+        }, () => {})
+        return () => { alive = false }
+      }, [attachment, loadImage])
+      return url === null
+        ? React.createElement('span', { className: 'dsh-flow-queue-thumb', 'aria-hidden': 'true' })
+        : React.createElement('img', { className: 'dsh-flow-queue-thumb', src: url, alt: '排队消息图片' })
+    }
+
+    function QueueDock({ useSession, updateQueue, notify, loadImage }) {
+      const inbox = useSession(snapshot => snapshot.queue)
       const queue = React.useMemo(() => inbox.filter(row => row.placement === 'queued'), [inbox])
-      const running = props.useSession(snapshot => snapshot.running)
-      const mutable = props.useSession(snapshot => snapshot.subagent === null)
+      const pendingSubmissions = useSession(snapshot => snapshot.pendingSubmissions)
+      const pendingQueue = React.useMemo(() => {
+        const admitted = new Set(queue.flatMap(row => row.rpcId === undefined ? [] : [row.rpcId]))
+        return pendingSubmissions.filter(submission => submission.placement === 'queued' && !admitted.has(submission.requestId))
+      }, [pendingSubmissions, queue])
+      const rowCount = queue.length + pendingQueue.length
+      const running = useSession(snapshot => snapshot.running)
+      const mutable = useSession(snapshot => snapshot.subagent === null)
       const [editing, setEditing] = React.useState(null)
       const [busy, setBusy] = React.useState(null)
       const [expanded, setExpanded] = React.useState({})
@@ -114,20 +143,18 @@ return {
         if (editing && (!mutable || !queue.some(row => row.id === editing.id))) setEditing(null)
       }, [editing, mutable, queue])
 
-      if (queue.length === 0) return null
+      if (rowCount === 0) return null
 
       const act = async (id, action, failure) => {
         setBusy(id)
         setError(null)
         try {
-          const session = sessions.binding(props.sessionId)?.session
-          if (!session) throw new Error('当前会话连接不可用')
-          const result = await session.updateQueue(id, action)
-          if (!result.ok) throw new Error(result.error.code + '：' + result.error.message)
+          await updateQueue(id, action)
           return true
         } catch (actionError) {
           const detail = String((actionError && actionError.message) || actionError)
           setError(failure + '：' + detail)
+          notify('error', failure)
           console.error('[排队消息] ' + failure, actionError)
           return false
         } finally {
@@ -143,12 +170,13 @@ return {
 
       return React.createElement('div', { className: 'dsh-flow-queue', 'data-dsh-flow-queue': '' },
         React.createElement('div', { className: 'dsh-flow-queue-panel' },
-          queue.length > 1 ? React.createElement('div', { className: 'dsh-flow-queue-head' },
+          rowCount > 1 ? React.createElement('div', { className: 'dsh-flow-queue-head' },
             React.createElement('span', { className: 'dsh-flow-queue-lead', 'aria-hidden': 'true' }, React.createElement(Icon, { name: 'queue' })),
-            React.createElement('span', { className: 'dsh-flow-queue-count' }, '排队消息 ' + queue.length),
+            React.createElement('span', { className: 'dsh-flow-queue-count' }, '排队消息 ' + rowCount),
             React.createElement('span', { className: 'dsh-flow-queue-hint' }, mutable ? '等待当前回复完成' : '不可修改')) : null,
           React.createElement('ol', { className: 'dsh-flow-queue-list' }, queue.map(row => {
             const text = queueText(row)
+            const imageRefs = queueImageRefs(row.content)
             const isEditing = editing && editing.id === row.id
             const isLong = text.length > 180 || lineCount(text) > 3
             if (isEditing) {
@@ -182,6 +210,8 @@ return {
             return React.createElement('li', { key: row.id, className: 'dsh-flow-queue-item' },
               React.createElement('div', { className: 'dsh-flow-queue-line' },
                 React.createElement('span', { className: 'dsh-flow-queue-lead', 'aria-hidden': 'true' }, React.createElement(Icon, { name: 'queue' })),
+                imageRefs.length > 0 ? React.createElement('span', { className: 'dsh-flow-queue-thumbs' }, imageRefs.map((attachment, index) =>
+                  React.createElement(QueueThumb, { key: String(attachment.attachmentId) + ':' + index, attachment, loadImage }))) : null,
                 React.createElement('span', { className: 'dsh-flow-queue-preview', 'data-full': full ? 'true' : 'false' }, text),
                 mutable ? React.createElement('div', { className: 'dsh-flow-queue-actions' },
                   React.createElement('button', {
@@ -205,7 +235,13 @@ return {
                 type: 'button', className: 'dsh-flow-queue-expand',
                 onClick: () => setExpanded(values => Object.assign({}, values, { [row.id]: !full })),
               }, full ? '收起' : '展开全部') : null)
-          })),
+          }).concat(pendingQueue.map(submission =>
+            React.createElement('li', { key: submission.requestId, className: 'dsh-flow-queue-item', 'data-submission-echo': '' },
+              React.createElement('div', { className: 'dsh-flow-queue-line' },
+                React.createElement('span', { className: 'dsh-flow-queue-lead', 'aria-hidden': 'true' }, React.createElement(Icon, { name: 'queue' })),
+                submission.images.length > 0 ? React.createElement('span', { className: 'dsh-flow-queue-thumbs' }, submission.images.map((image, index) =>
+                  React.createElement('img', { key: image.previewUrl + ':' + index, className: 'dsh-flow-queue-thumb', src: image.previewUrl, alt: '排队消息图片' }))) : null,
+                React.createElement('span', { className: 'dsh-flow-queue-preview' }, submission.text)))))),
           error ? React.createElement('div', { className: 'dsh-flow-queue-error' }, error) : null))
     }
 
@@ -213,6 +249,17 @@ return {
       name: 'conversation.input.dock',
       id: 'flowui-queue',
       order: 21,
+      inject: sessionId => {
+        const actx = sessions.scope(sessionId)
+        if (actx === undefined) throw new Error('flowui queue: session "' + sessionId + '" resolved no scope')
+        const conversation = actx.get('conversation')
+        if (conversation === undefined) throw new Error('flowui queue: conversation service unavailable')
+        return {
+          updateQueue: (itemId, action) => conversation.updateQueue(itemId, action),
+          notify: (level, text) => conversation.input.for(actx).notify(level, text),
+          loadImage: attachment => uiConversation.imageUrl(sessionId, attachment),
+        }
+      },
     }, QueueDock))
   },
 }

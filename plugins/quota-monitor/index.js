@@ -2,7 +2,7 @@
 
 // 侧边栏底部显示当前模型 provider 的用量/余额。
 module.exports = {
-  inject: ['credentials', 'subprocess', 'settings', 'timer', 'webServer'],
+  inject: ['connection', 'credentials', 'subprocess', 'settings', 'timer', 'webServer'],
   apply(ctx) {
     const creds = ctx.get('credentials')
     const settings = ctx.get('settings')
@@ -178,10 +178,17 @@ module.exports = {
     }
 
     const webServer = ctx.get('webServer')
+    const connection = ctx.get('connection')
     ctx.effect(() => webServer.register({
       kind: 'exact',
       path: '/api/hanger/quota',
       handler: async (request, response) => {
+        const rejection = connection.requestRejection(request)
+        if (rejection !== undefined) {
+          response.writeHead(rejection)
+          response.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+          return
+        }
         if (request.method !== 'GET') {
           response.writeHead(405, { 'Content-Type': 'application/json; charset=utf-8' })
           response.end(JSON.stringify({ ok: false, error: 'Method Not Allowed' }))

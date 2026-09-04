@@ -145,7 +145,7 @@ final class RuntimeInstaller {
     }
 
     private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
-    private let pluginManagerVersion = "0.1.1"
+    private let pluginManagerVersion = "0.1.3"
 
     private func ensurePnpm(
         tools: Tools,
@@ -475,6 +475,7 @@ final class ServerManager {
             try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
             let logPath = Env.runtimeDir + "/server.log"
             try Data().write(to: URL(fileURLWithPath: logPath), options: .atomic)
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: logPath)
             logHandle = FileHandle(forWritingAtPath: logPath)
 
             let executables = [launch.node, launch.pnpm] + (launch.npm.map { [$0] } ?? [])
@@ -520,9 +521,10 @@ final class ServerManager {
             return
         }
         isListening { ready in
-            if ready {
-                // HTTP 响应才是启动完成的事实；server.log 只用于诊断，不能作为 App 可用性的门禁。
-                completion(.ready(Env.rootURL))
+            if ready, let launchURL = self.authenticatedLaunchURL() {
+                // 0.1.2 起 Web 首页要求由 dsh web 签发的启动 token。HTTP 响应与该 URL
+                // 共同构成 ready；WebKit 首次访问后由 DSH 换取持久会话 cookie。
+                completion(.ready(launchURL))
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -578,6 +580,35 @@ final class ServerManager {
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else {
             return "没有生成 server.log"
         }
-        return text.split(separator: "\n", omittingEmptySubsequences: false).suffix(40).joined(separator: "\n")
+        let tail = text.split(separator: "\n", omittingEmptySubsequences: false).suffix(40).joined(separator: "\n")
+        return tail.replacingOccurrences(
+            of: #"([?&]token=)[^&\s]+"#,
+            with: "$1<redacted>",
+            options: .regularExpression
+        )
+    }
+
+    private func authenticatedLaunchURL() -> URL? {
+        let path = Env.runtimeDir + "/server.log"
+        guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        for line in text.split(separator: "\n").reversed() {
+            let value = String(line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard value.hasPrefix("dsh web: ") else { continue }
+            let rawURL = String(value.dropFirst("dsh web: ".count)).split(whereSeparator: { $0.isWhitespace }).first.map(String.init)
+            guard let rawURL,
+                  let components = URLComponents(string: rawURL),
+                  components.scheme == "http",
+                  components.host == "127.0.0.1",
+                  components.port == Env.port,
+                  components.path == "/",
+                  let queryItems = components.queryItems,
+                  queryItems.count == 1,
+                  queryItems[0].name == "token",
+                  let token = queryItems[0].value,
+                  !token.isEmpty,
+                  let url = components.url else { continue }
+            return url
+        }
+        return nil
     }
 }

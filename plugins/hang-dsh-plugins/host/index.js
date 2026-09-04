@@ -9,7 +9,7 @@ const { readJsonBody, sendJson } = require('./process.js')
 const packageManifest = require('../package.json')
 
 module.exports = {
-  inject: ['webServer'],
+  inject: ['connection', 'webServer'],
   apply(ctx) {
     const dshHome = process.env.DSH_HOME || Path.join(Os.homedir(), '.dsh')
     const runtimeDir = Path.join(dshHome, 'runtime', 'dsh-desktop')
@@ -46,11 +46,18 @@ module.exports = {
     }
 
     const webServer = ctx.get('webServer')
+    const connection = ctx.get('connection')
     const route = (path, methods, handler) => {
       ctx.effect(() => webServer.register({
         kind: 'exact',
         path,
         handler: async (request, response) => {
+          const rejection = connection.requestRejection(request)
+          if (rejection !== undefined) {
+            response.writeHead(rejection)
+            response.end(rejection === 401 ? 'unauthorized' : 'forbidden')
+            return
+          }
           if (!methods.includes(request.method || 'GET')) {
             sendJson(response, 405, { ok: false, error: 'Method Not Allowed' })
             return
