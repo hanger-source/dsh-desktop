@@ -16,9 +16,9 @@ window.__ModuleLoader__.load({
 // Generated from client/*.js. Do not edit this section directly.
 const __dshClientPart0 = (() => {
 // 排队消息 —— Client 半
-// 通过正式 Slot 接管 QueueDock，保留 Session Remote API 作为唯一写入链路。
+// 通过正式 Slot 接管 QueueDock，读写都经 Session Remote API；不依赖 ui-conversation 的私有子作用域服务。
 return {
-  inject: ['slots', 'conversation', 'sessions', 'uiConversation'],
+  inject: ['slots', 'sessions'],
   apply(ctx) {
     styles.insert(`
       [data-queue-dock]{display:none!important}
@@ -54,8 +54,7 @@ return {
 
     const slots = ctx.get('slots')
     const sessions = ctx.get('sessions')
-    const uiConversation = ctx.get('uiConversation')
-    if (!slots || !sessions || !uiConversation) return
+    if (!slots || !sessions) return
 
     const icons = {
       queue: {
@@ -109,21 +108,29 @@ return {
       return content.flatMap(block => block && block.type === 'image' && block.attachment ? [block.attachment] : [])
     }
 
-    function QueueThumb({ attachment, loadImage }) {
+    function QueueThumb({ attachment, readImage }) {
       const [url, setUrl] = React.useState(null)
       React.useEffect(() => {
         let alive = true
-        loadImage(attachment).then(resolved => {
-          if (alive) setUrl(resolved)
+        let objectUrl = null
+        readImage(attachment).then(result => {
+          if (!result.ok) return
+          const bytes = Uint8Array.from(result.value.data)
+          objectUrl = URL.createObjectURL(new Blob([bytes.buffer], { type: result.value.attachment.mediaType }))
+          if (alive) setUrl(objectUrl)
+          else URL.revokeObjectURL(objectUrl)
         }, () => {})
-        return () => { alive = false }
-      }, [attachment, loadImage])
+        return () => {
+          alive = false
+          if (objectUrl !== null) URL.revokeObjectURL(objectUrl)
+        }
+      }, [attachment, readImage])
       return url === null
         ? React.createElement('span', { className: 'dsh-flow-queue-thumb', 'aria-hidden': 'true' })
         : React.createElement('img', { className: 'dsh-flow-queue-thumb', src: url, alt: '排队消息图片' })
     }
 
-    function QueueDock({ useSession, updateQueue, notify, loadImage }) {
+    function QueueDock({ useSession, updateQueue, notify, readImage }) {
       const inbox = useSession(snapshot => snapshot.queue)
       const queue = React.useMemo(() => inbox.filter(row => row.placement === 'queued'), [inbox])
       const pendingSubmissions = useSession(snapshot => snapshot.pendingSubmissions)
@@ -211,7 +218,7 @@ return {
               React.createElement('div', { className: 'dsh-flow-queue-line' },
                 React.createElement('span', { className: 'dsh-flow-queue-lead', 'aria-hidden': 'true' }, React.createElement(Icon, { name: 'queue' })),
                 imageRefs.length > 0 ? React.createElement('span', { className: 'dsh-flow-queue-thumbs' }, imageRefs.map((attachment, index) =>
-                  React.createElement(QueueThumb, { key: String(attachment.attachmentId) + ':' + index, attachment, loadImage }))) : null,
+                  React.createElement(QueueThumb, { key: String(attachment.attachmentId) + ':' + index, attachment, readImage }))) : null,
                 React.createElement('span', { className: 'dsh-flow-queue-preview', 'data-full': full ? 'true' : 'false' }, text),
                 mutable ? React.createElement('div', { className: 'dsh-flow-queue-actions' },
                   React.createElement('button', {
@@ -254,10 +261,12 @@ return {
         if (actx === undefined) throw new Error('flowui queue: session "' + sessionId + '" resolved no scope')
         const conversation = actx.get('conversation')
         if (conversation === undefined) throw new Error('flowui queue: conversation service unavailable')
+        const session = sessions.binding(sessionId)?.session
+        if (session === undefined) throw new Error('flowui queue: session remote unavailable')
         return {
           updateQueue: (itemId, action) => conversation.updateQueue(itemId, action),
           notify: (level, text) => conversation.input.for(actx).notify(level, text),
-          loadImage: attachment => uiConversation.imageUrl(sessionId, attachment),
+          readImage: attachment => session.readAttachment(attachment.attachmentId),
         }
       },
     }, QueueDock))
