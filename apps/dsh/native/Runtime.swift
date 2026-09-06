@@ -227,8 +227,13 @@ final class RuntimeInstaller {
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
         let packages: BundledPackages
+        let desktopRuntimeArchive: URL
+        let pluginManagerArchive: URL
         do {
             packages = try bundledPackages()
+            desktopRuntimeArchive = try materializeBundledPackage(packages.desktopRuntime)
+            pluginManagerArchive = try materializeBundledPackage(packages.pluginManager)
+            try bindDesktopRuntimeDependency(packages.desktopRuntime, to: desktopRuntimeArchive)
         } catch {
             completion(.failure(error))
             return
@@ -249,6 +254,7 @@ final class RuntimeInstaller {
                 if needsManagerInstall {
                     self.installBundledPackage(
                         packages.pluginManager,
+                        archive: pluginManagerArchive,
                         tools: tools,
                         title: "正在准备插件管理器",
                         detail: "正在安装 App 随附的独立插件管理器…",
@@ -258,18 +264,31 @@ final class RuntimeInstaller {
                         switch result {
                         case .failure(let error): completion(.failure(error))
                         case .success:
-                            self.ensureDesktopRuntime(packages.desktopRuntime, tools: tools, status: status, completion: completion)
+                            self.ensureDesktopRuntime(
+                                packages.desktopRuntime,
+                                archive: desktopRuntimeArchive,
+                                tools: tools,
+                                status: status,
+                                completion: completion
+                            )
                         }
                     }
                     return
                 }
-                self.ensureDesktopRuntime(packages.desktopRuntime, tools: tools, status: status, completion: completion)
+                self.ensureDesktopRuntime(
+                    packages.desktopRuntime,
+                    archive: desktopRuntimeArchive,
+                    tools: tools,
+                    status: status,
+                    completion: completion
+                )
             }
         }
     }
 
     private func ensureDesktopRuntime(
         _ package: BundledPackage,
+        archive: URL,
         tools: Tools,
         status: @escaping (String, String, String?) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
@@ -284,6 +303,7 @@ final class RuntimeInstaller {
                 }
                 self.installBundledPackage(
                     package,
+                    archive: archive,
                     tools: tools,
                     title: "正在准备 Desktop",
                     detail: "正在安装当前 App 自带的管理界面…",
@@ -301,6 +321,7 @@ final class RuntimeInstaller {
 
     private func installBundledPackage(
         _ package: BundledPackage,
+        archive: URL,
         tools: Tools,
         title: String,
         detail: String,
@@ -310,22 +331,6 @@ final class RuntimeInstaller {
     ) {
         guard tools.pnpm != nil else {
             completion(.failure(messageError("pnpm 尚未准备完成。")))
-            return
-        }
-        guard let resourceURL = Bundle.main.resourceURL else {
-            completion(.failure(messageError("App 没有 Resources 目录。")))
-            return
-        }
-        let bundledArchive = resourceURL.appendingPathComponent("packages", isDirectory: true).appendingPathComponent(package.archive)
-        guard FileManager.default.fileExists(atPath: bundledArchive.path) else {
-            completion(.failure(messageError("App 随附的软件包不存在：\n\(bundledArchive.path)")))
-            return
-        }
-        let archive: URL
-        do {
-            archive = try materialize(package: package, from: bundledArchive)
-        } catch {
-            completion(.failure(error))
             return
         }
         status(title, detail, logName)
@@ -353,6 +358,37 @@ final class RuntimeInstaller {
                 }
             }
         }
+    }
+
+    private func materializeBundledPackage(_ package: BundledPackage) throws -> URL {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            throw messageError("App 没有 Resources 目录。")
+        }
+        let source = resourceURL
+            .appendingPathComponent("packages", isDirectory: true)
+            .appendingPathComponent(package.archive)
+        guard FileManager.default.fileExists(atPath: source.path) else {
+            throw messageError("App 随附的软件包不存在：\n\(source.path)")
+        }
+        return try materialize(package: package, from: source)
+    }
+
+    private func bindDesktopRuntimeDependency(_ package: BundledPackage, to archive: URL) throws {
+        let manifestURL = URL(fileURLWithPath: Env.dshHome)
+            .appendingPathComponent("profiles/web/package.json")
+        guard FileManager.default.fileExists(atPath: manifestURL.path) else { return }
+
+        let data = try Data(contentsOf: manifestURL)
+        guard var manifest = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var dependencies = manifest["dependencies"] as? [String: Any],
+              dependencies[package.name] != nil else { return }
+
+        let source = "file:" + archive.path
+        guard dependencies[package.name] as? String != source else { return }
+        dependencies[package.name] = source
+        manifest["dependencies"] = dependencies
+        let updated = try JSONSerialization.data(withJSONObject: manifest, options: [.prettyPrinted, .sortedKeys])
+        try updated.write(to: manifestURL, options: .atomic)
     }
 
     private func bundledPackages() throws -> BundledPackages {
