@@ -19,7 +19,14 @@ private func waitForExit(pid: pid_t) {
 private func openApplication(_ url: URL) throws {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-    process.arguments = [url.path]
+    var arguments: [String] = []
+    for name in ["DSH_HOME", "DSH_PORT"] {
+        if let value = ProcessInfo.processInfo.environment[name] {
+            arguments.append(contentsOf: ["--env", "\(name)=\(value)"])
+        }
+    }
+    arguments.append(url.path)
+    process.arguments = arguments
     try process.run()
     process.waitUntilExit()
     guard process.terminationStatus == 0 else {
@@ -87,12 +94,23 @@ private func restore(arguments: ArraySlice<String>) throws {
     try files.removeItem(at: checkpoint)
 }
 
+private func relaunch(arguments: ArraySlice<String>) throws {
+    guard arguments.count == 2,
+          let pid = pid_t(arguments[arguments.startIndex]) else {
+        throw HelperFailure(description: "relaunch 参数无效")
+    }
+    let application = URL(fileURLWithPath: arguments[arguments.index(after: arguments.startIndex)])
+    waitForExit(pid: pid)
+    try openApplication(application)
+}
+
 let arguments = CommandLine.arguments.dropFirst()
 guard let mode = arguments.first else { fail("缺少更新模式") }
 do {
     switch mode {
     case "install": try install(arguments: arguments.dropFirst())
     case "restore": try restore(arguments: arguments.dropFirst())
+    case "relaunch": try relaunch(arguments: arguments.dropFirst())
     default: throw HelperFailure(description: "未知更新模式：\(mode)")
     }
 } catch {

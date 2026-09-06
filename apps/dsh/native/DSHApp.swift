@@ -278,13 +278,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     }
 
     @objc private func restartApplication(_ sender: Any?) {
+        guard let helperURL = Bundle.main.resourceURL?.appendingPathComponent("tools/DSHUpdateHelper"),
+              FileManager.default.isExecutableFile(atPath: helperURL.path) else {
+            showStartupFailure(title: "DSH.app 重启失败", detail: "App 缺少更新 helper。")
+            return
+        }
         let relauncher = Process()
-        relauncher.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
+        relauncher.executableURL = helperURL
         relauncher.arguments = [
-            "/bin/bash",
-            "-c",
-            "sleep 1; /usr/bin/open \"$1\"",
-            "dsh-relaunch",
+            "relaunch",
+            String(ProcessInfo.processInfo.processIdentifier),
             Bundle.main.bundlePath,
         ]
         relauncher.standardOutput = FileHandle.nullDevice
