@@ -798,10 +798,16 @@ final class ServerManager {
     private(set) var ownsServer = false
 
     func isListening(timeout: TimeInterval = 2, completion: @escaping (Bool) -> Void) {
+        probeRoot(timeout: timeout) { response in
+            completion(response != nil)
+        }
+    }
+
+    private func probeRoot(timeout: TimeInterval = 2, completion: @escaping (HTTPURLResponse?) -> Void) {
         var request = URLRequest(url: Env.rootURL)
         request.timeoutInterval = timeout
         URLSession.shared.dataTask(with: request) { _, response, _ in
-            DispatchQueue.main.async { completion(response is HTTPURLResponse) }
+            DispatchQueue.main.async { completion(response as? HTTPURLResponse) }
         }.resume()
     }
 
@@ -862,10 +868,15 @@ final class ServerManager {
             completion(.failure("dsh web 已退出。\n\n" + serverLogTail()))
             return
         }
-        isListening { ready in
-            if ready, let launchURL = self.authenticatedLaunchURL() {
-                // 0.1.2 起 Web 首页要求由 dsh web 签发的启动 token。HTTP 响应与该 URL
-                // 共同构成 ready；WebKit 首次访问后由 DSH 换取持久会话 cookie。
+        probeRoot { response in
+            if let status = response?.statusCode, (200..<400).contains(status) {
+                completion(.ready(Env.rootURL))
+                return
+            }
+            if let status = response?.statusCode,
+               status == 401 || status == 403,
+               let launchURL = self.announcedAuthenticatedLaunchURL() {
+                // 需要鉴权时不预先访问一次性启动 URL；交给 WebKit 换取持久会话 cookie。
                 completion(.ready(launchURL))
                 return
             }
@@ -925,7 +936,7 @@ final class ServerManager {
         )
     }
 
-    private func authenticatedLaunchURL() -> URL? {
+    private func announcedAuthenticatedLaunchURL() -> URL? {
         let path = Env.runtimeDir + "/server.log"
         guard let text = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         for line in text.split(separator: "\n").reversed() {
@@ -938,10 +949,7 @@ final class ServerManager {
                   components.host == "127.0.0.1",
                   components.port == Env.port,
                   components.path == "/",
-                  let queryItems = components.queryItems,
-                  queryItems.count == 1,
-                  queryItems[0].name == "token",
-                  let token = queryItems[0].value,
+                  let token = components.queryItems?.first(where: { $0.name == "token" })?.value,
                   !token.isEmpty,
                   let url = components.url else { continue }
             return url
