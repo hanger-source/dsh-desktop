@@ -43,10 +43,10 @@ jobs:
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
       - name: Verify Desktop runtime
+        timeout-minutes: 5
         run: |
-          npm --prefix apps/dsh/desktop-runtime install --ignore-scripts
+          npm --prefix apps/dsh/desktop-runtime ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
           npm --prefix apps/dsh/desktop-runtime run check
-          npm --prefix plugins/hang-dsh-plugins install --ignore-scripts
           npm --prefix plugins/hang-dsh-plugins run check
       - name: Verify update checkpoint restore
         run: |
