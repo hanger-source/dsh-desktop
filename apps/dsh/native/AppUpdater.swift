@@ -16,15 +16,18 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
     private var expectedDigest = ""
     private var downloadFinished = false
     private var updating = false
-    private lazy var session = URLSession(
-        configuration: .ephemeral,
-        delegate: self,
-        delegateQueue: {
+    private lazy var session: URLSession = {
+        let configuration = URLSessionConfiguration.default
+        return URLSession(
+            configuration: configuration,
+            delegate: self,
+            delegateQueue: {
             let queue = OperationQueue()
             queue.maxConcurrentOperationCount = 1
             return queue
-        }()
-    )
+            }()
+        )
+    }()
 
     func install(
         dmgURL: URL,
@@ -37,13 +40,9 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
             completion(.failure(error("App 更新已经在进行中。")))
             return
         }
-        guard validReleaseURL(dmgURL, suffix: "/DSH.dmg"),
-              validReleaseURL(checksumURL, suffix: "/SHA256SUMS.txt") else {
+        guard validReleaseURL(dmgURL, version: expectedVersion, asset: "DSH.dmg"),
+              validReleaseURL(checksumURL, version: expectedVersion, asset: "SHA256SUMS.txt") else {
             completion(.failure(error("更新地址不是 DSH Desktop 的正式 GitHub Release。")))
-            return
-        }
-        guard expectedVersion.split(separator: ".").count == 3 else {
-            completion(.failure(error("目标 App 版本无效：\(expectedVersion)")))
             return
         }
 
@@ -55,8 +54,7 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
 
         var request = URLRequest(url: checksumURL)
         request.cachePolicy = .reloadIgnoringLocalCacheData
-        request.timeoutInterval = 30
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
+        session.dataTask(with: request) { [weak self] data, response, error in
             guard let self else { return }
             if let error {
                 self.fail(self.error("读取 Release 校验信息失败：\(error.localizedDescription)"))
@@ -72,7 +70,6 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
             self.emit(state: "downloading", message: "正在下载 DSH Desktop \(expectedVersion)…", progress: 0)
             var downloadRequest = URLRequest(url: dmgURL)
             downloadRequest.cachePolicy = .reloadIgnoringLocalCacheData
-            downloadRequest.timeoutInterval = 300
             self.downloadFinished = false
             self.session.downloadTask(with: downloadRequest).resume()
         }.resume()
@@ -119,7 +116,7 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
-        guard let error, !downloadFinished else { return }
+        guard task is URLSessionDownloadTask, let error, !downloadFinished else { return }
         fail(self.error("下载 DSH Desktop 失败：\(error.localizedDescription)"))
     }
 
@@ -173,42 +170,31 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
             try FileManager.default.removeItem(at: backup)
         }
         let log = Env.runtimeDir + "/app-update.log"
-        let script = work.appendingPathComponent("install-update.sh")
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let text = """
-        #!/bin/bash
-        set -eu
-        exec >> \(shellQuote(log)) 2>&1
-        while /bin/kill -0 \(pid) 2>/dev/null; do /bin/sleep 0.2; done
-        if [ -e \(shellQuote(destination.path)) ]; then
-          /bin/mv \(shellQuote(destination.path)) \(shellQuote(backup.path))
-        fi
-        if /bin/mv \(shellQuote(staged.path)) \(shellQuote(destination.path)); then
-          /usr/bin/open \(shellQuote(destination.path))
-          exit 0
-        fi
-        if [ -e \(shellQuote(backup.path)) ]; then
-          /bin/mv \(shellQuote(backup.path)) \(shellQuote(destination.path))
-          /usr/bin/open \(shellQuote(destination.path))
-        fi
-        exit 1
-        """
-        try text.write(to: script, atomically: true, encoding: .utf8)
-
-        let helper = Process()
-        helper.executableURL = URL(fileURLWithPath: "/usr/bin/nohup")
-        helper.arguments = ["/bin/bash", script.path]
-        helper.standardOutput = FileHandle.nullDevice
-        helper.standardError = FileHandle.nullDevice
-        try helper.run()
-    }
-
-    static func cleanupPreviousInstallation() {
-        let backup = Bundle.main.bundleURL.deletingLastPathComponent()
-            .appendingPathComponent(".DSH.app.previous", isDirectory: true)
-        if FileManager.default.fileExists(atPath: backup.path) {
-            try? FileManager.default.removeItem(at: backup)
+        let failureMarker = Env.runtimeDir + "/update-checkpoint/app-install-failed"
+        guard let helperURL = Bundle.main.resourceURL?.appendingPathComponent("tools/DSHUpdateHelper"),
+              FileManager.default.isExecutableFile(atPath: helperURL.path) else {
+            throw error("App 缺少更新 helper。")
         }
+        try FileManager.default.createDirectory(atPath: Env.runtimeDir, withIntermediateDirectories: true)
+        if !FileManager.default.fileExists(atPath: log) {
+            FileManager.default.createFile(atPath: log, contents: nil)
+        }
+        guard let logHandle = FileHandle(forWritingAtPath: log) else { throw error("无法写入 App 更新日志。") }
+        logHandle.seekToEndOfFile()
+        let helper = Process()
+        helper.executableURL = helperURL
+        helper.arguments = [
+            "install",
+            String(ProcessInfo.processInfo.processIdentifier),
+            staged.path,
+            destination.path,
+            backup.path,
+            failureMarker,
+            work.path,
+        ]
+        helper.standardOutput = logHandle
+        helper.standardError = logHandle
+        try helper.run()
     }
 
     private func dmgDigest(from text: String) -> String? {
@@ -231,11 +217,10 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    private func validReleaseURL(_ url: URL, suffix: String) -> Bool {
+    private func validReleaseURL(_ url: URL, version: String, asset: String) -> Bool {
         url.scheme == "https"
             && url.host == "github.com"
-            && url.path.hasPrefix("/hanger-source/dsh-desktop/releases/download/dsh-app-v")
-            && url.path.hasSuffix(suffix)
+            && url.path == "/hanger-source/dsh-desktop/releases/download/dsh-app-v\(version)/\(asset)"
     }
 
     private func command(_ executable: String, _ arguments: [String]) throws -> (status: Int32, output: Data, errorText: String) {
@@ -254,10 +239,6 @@ final class AppUpdater: NSObject, URLSessionDownloadDelegate, URLSessionTaskDele
             throw error("命令失败（\(process.terminationStatus)）：\(executable)\n\(errorText)")
         }
         return (process.terminationStatus, data, errorText)
-    }
-
-    private func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
     private func emit(state: String, message: String, progress: Double? = nil) {

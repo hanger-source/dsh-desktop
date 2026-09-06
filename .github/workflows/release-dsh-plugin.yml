@@ -50,7 +50,7 @@ jobs:
             echo "tag 已存在：$tag" >&2
             exit 1
           fi
-          if [ "$PLUGIN" = conversation-experience ]; then
+          if [ "$PLUGIN" = conversation-experience ] || [ "$PLUGIN" = hang-dsh-plugins ]; then
             npm --prefix "plugins/$PLUGIN" run check
           fi
           (cd "plugins/$PLUGIN" && npm pack --dry-run --json) >/tmp/plugin-pack.json

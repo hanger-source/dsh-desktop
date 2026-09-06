@@ -1,0 +1,37 @@
+{
+  "name": "@hanger-source/dsh-desktop-runtime",
+  "version": "0.0.0-dev",
+  "description": "DSH Desktop 随 App 分发的管理运行时",
+  "license": "MIT",
+  "dependencies": {
+    "semver": "7.7.2"
+  },
+  "scripts": {
+    "check": "node --test host/runtime.test.js && node --check client.js && node --check host/index.js && node --check host/process.js && node --check host/versions.js"
+  },
+  "main": "host/index.js",
+  "exports": {
+    ".": "./host/index.js",
+    "./client": "./client.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "host/index.js",
+    "host/process.js",
+    "host/versions.js",
+    "client.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
+    }
+  }
+}

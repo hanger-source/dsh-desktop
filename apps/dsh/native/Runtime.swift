@@ -1,8 +1,11 @@
 import Foundation
 import Darwin
+import CryptoKit
 
 enum Env {
-    static let port = 3080
+    static var port: Int {
+        Int(ProcessInfo.processInfo.environment["DSH_PORT"] ?? "") ?? 3080
+    }
     static var rootURL: URL { URL(string: "http://127.0.0.1:\(port)/")! }
     static var home: String { FileManager.default.homeDirectoryForCurrentUser.path }
     static var dshHome: String {
@@ -35,6 +38,7 @@ enum Env {
 
 struct RuntimeLaunch {
     let dsh: String
+    let dshVersion: String
     let node: String
     let npm: String?
     let pnpm: String
@@ -42,6 +46,11 @@ struct RuntimeLaunch {
 
 enum StepResult {
     case success
+    case failure(String)
+}
+
+enum CaptureResult {
+    case success(Data)
     case failure(String)
 }
 
@@ -67,8 +76,8 @@ final class RuntimeInstaller {
                     case .failure(let error):
                         completion(.failure(error))
                     case .success(let prepared):
-                        self.ensurePluginManager(tools: prepared, status: status) { managerResult in
-                            switch managerResult {
+                        self.ensureBundledPackages(tools: prepared, status: status) { runtimeResult in
+                            switch runtimeResult {
                             case .failure(let error):
                                 completion(.failure(error))
                             case .success:
@@ -81,12 +90,27 @@ final class RuntimeInstaller {
                                     switch activationResult {
                                     case .failure(let error): completion(.failure(error))
                                     case .success:
-                                        completion(.success(RuntimeLaunch(
-                                            dsh: prepared.dsh,
-                                            node: prepared.node,
-                                            npm: prepared.npm,
-                                            pnpm: prepared.pnpm!
-                                        )))
+                                        self.resolvePackageMetadata(
+                                            ["@deepseek-ai/dsh"],
+                                            from: prepared.dsh,
+                                            tools: prepared
+                                        ) { metadataResult in
+                                            switch metadataResult {
+                                            case .failure(let error): completion(.failure(error))
+                                            case .success(let packages):
+                                                guard let version = packages["@deepseek-ai/dsh"]?.version else {
+                                                    completion(.failure(self.messageError("无法解析当前 dsh 版本。")))
+                                                    return
+                                                }
+                                                completion(.success(RuntimeLaunch(
+                                                    dsh: prepared.dsh,
+                                                    dshVersion: version,
+                                                    node: prepared.node,
+                                                    npm: prepared.npm,
+                                                    pnpm: prepared.pnpm!
+                                                )))
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -144,8 +168,25 @@ final class RuntimeInstaller {
         }
     }
 
-    private let pluginManagerName = "@hanger-source/hang-dsh-plugins"
-    private let pluginManagerVersion = "0.1.3"
+    private struct BundledPackage: Decodable {
+        let name: String
+        let version: String
+        let archive: String
+        let sha256: String
+    }
+
+    private struct BundledPackages: Decodable {
+        let schemaVersion: Int
+        let desktopRuntime: BundledPackage
+        let pluginManager: BundledPackage
+    }
+
+    private struct ProfilePackage {
+        let version: String?
+        let path: String
+    }
+
+    private let legacyDesktopRuntimeNames = ["@hanger/dsh-desktop-runtime"]
 
     private func ensurePnpm(
         tools: Tools,
@@ -180,85 +221,234 @@ final class RuntimeInstaller {
         }
     }
 
-    private func ensurePluginManager(
+    private func ensureBundledPackages(
         tools: Tools,
         status: @escaping (String, String, String?) -> Void,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        if let installed = installedPluginManagerVersion(),
-           compareSemanticVersions(installed, pluginManagerVersion) >= 0,
-           profileHasPluginManagerBundle() {
-            completion(.success(()))
+        let packages: BundledPackages
+        do {
+            packages = try bundledPackages()
+        } catch {
+            completion(.failure(error))
             return
         }
-        guard let pnpm = tools.pnpm else {
+        loadProfilePackages(tools: tools) { result in
+            switch result {
+            case .failure(let error):
+                completion(.failure(error))
+            case .success(let installed):
+                let manager = installed[packages.pluginManager.name]
+                let needsManagerInstall: Bool
+                do {
+                    needsManagerInstall = try manager.map(self.isLegacyPluginManager) ?? true
+                } catch {
+                    completion(.failure(error))
+                    return
+                }
+                if needsManagerInstall {
+                    self.installBundledPackage(
+                        packages.pluginManager,
+                        tools: tools,
+                        title: "正在准备插件管理器",
+                        detail: "正在安装 App 随附的独立插件管理器…",
+                        logName: "plugin-manager-install.log",
+                        status: status
+                    ) { result in
+                        switch result {
+                        case .failure(let error): completion(.failure(error))
+                        case .success:
+                            self.ensureDesktopRuntime(packages.desktopRuntime, tools: tools, status: status, completion: completion)
+                        }
+                    }
+                    return
+                }
+                self.ensureDesktopRuntime(packages.desktopRuntime, tools: tools, status: status, completion: completion)
+            }
+        }
+    }
+
+    private func ensureDesktopRuntime(
+        _ package: BundledPackage,
+        tools: Tools,
+        status: @escaping (String, String, String?) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        loadProfilePackages(tools: tools) { result in
+            switch result {
+            case .failure(let error): completion(.failure(error))
+            case .success(let installed):
+                if installed[package.name]?.version == package.version && self.profileBundles().contains(package.name) {
+                    self.migrateLegacyDesktopRuntime(tools: tools, completion: completion)
+                    return
+                }
+                self.installBundledPackage(
+                    package,
+                    tools: tools,
+                    title: "正在准备 Desktop",
+                    detail: "正在安装当前 App 自带的管理界面…",
+                    logName: "desktop-runtime-install.log",
+                    status: status
+                ) { result in
+                    switch result {
+                    case .failure(let error): completion(.failure(error))
+                    case .success: self.migrateLegacyDesktopRuntime(tools: tools, completion: completion)
+                    }
+                }
+            }
+        }
+    }
+
+    private func installBundledPackage(
+        _ package: BundledPackage,
+        tools: Tools,
+        title: String,
+        detail: String,
+        logName: String,
+        status: @escaping (String, String, String?) -> Void,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard tools.pnpm != nil else {
             completion(.failure(messageError("pnpm 尚未准备完成。")))
             return
         }
-        let defaultSpec = "github:hanger-source/dsh-desktop#plugin-hang-dsh-plugins-v\(pluginManagerVersion)&path:/plugins/hang-dsh-plugins"
-        let spec = ProcessInfo.processInfo.environment["DSH_PLUGIN_MANAGER_SPEC"] ?? defaultSpec
-        status("正在准备 Hang 的插件", "正在通过 dsh plugin 安装 Desktop 插件管理器…", "plugin-manager-install.log")
-        runCommand(
-            executable: tools.dsh,
-            arguments: ["plugin", "--profile", "web", "add", spec, "--save-exact"],
-            environment: Env.commandEnvironment(executable: tools.dsh, additionalExecutables: [tools.node, pnpm] + (tools.npm.map { [$0] } ?? [])),
-            logName: "plugin-manager-install.log",
-            timeout: 300
-        ) { result in
-            if case .failure(let reason) = result {
-                completion(.failure(self.messageError("Hang 的插件管理器安装失败：\(reason)\n\n" + self.logTail("plugin-manager-install.log"))))
-                return
-            }
-            guard self.installedPluginManagerVersion() == self.pluginManagerVersion,
-                  self.profileHasPluginManagerBundle() else {
-                completion(.failure(self.messageError("dsh plugin 已退出成功，但管理器没有进入 web profile。\n\n" + self.logTail("plugin-manager-install.log"))))
-                return
-            }
-            completion(.success(()))
-        }
-    }
-
-    func updatePluginManager(
-        launch: RuntimeLaunch,
-        version: String,
-        completion: @escaping (Result<Void, Error>) -> Void
-    ) {
-        guard isSemanticVersion(version) else {
-            completion(.failure(messageError("基础插件版本无效：\(version)")))
+        guard let resourceURL = Bundle.main.resourceURL else {
+            completion(.failure(messageError("App 没有 Resources 目录。")))
             return
         }
-        let spec = "github:hanger-source/dsh-desktop#plugin-hang-dsh-plugins-v\(version)&path:/plugins/hang-dsh-plugins"
-        let executables = [launch.node, launch.pnpm] + (launch.npm.map { [$0] } ?? [])
+        let bundledArchive = resourceURL.appendingPathComponent("packages", isDirectory: true).appendingPathComponent(package.archive)
+        guard FileManager.default.fileExists(atPath: bundledArchive.path) else {
+            completion(.failure(messageError("App 随附的软件包不存在：\n\(bundledArchive.path)")))
+            return
+        }
+        let archive: URL
+        do {
+            archive = try materialize(package: package, from: bundledArchive)
+        } catch {
+            completion(.failure(error))
+            return
+        }
+        status(title, detail, logName)
         runCommand(
-            executable: launch.dsh,
-            arguments: ["plugin", "--profile", "web", "add", spec, "--save-exact"],
-            environment: Env.commandEnvironment(executable: launch.dsh, additionalExecutables: executables),
-            logName: "plugin-manager-update.log",
+            executable: tools.dsh,
+            arguments: ["plugin", "--profile", "web", "add", "file:" + archive.path, "--save-exact"],
+            environment: commandEnvironment(tools),
+            logName: logName,
             timeout: 300
         ) { result in
             if case .failure(let reason) = result {
-                completion(.failure(self.messageError(
-                    "Hang DSH Plugins 更新失败：\(reason)\n\n" + self.logTail("plugin-manager-update.log")
-                )))
+                completion(.failure(self.messageError("安装 \(package.name) 失败：\(reason)\n\n" + self.logTail(logName))))
                 return
             }
-            guard self.installedPluginManagerVersion() == version,
-                  self.profileHasPluginManagerBundle() else {
-                completion(.failure(self.messageError(
-                    "dsh plugin 已退出成功，但基础插件没有更新到 \(version)。\n\n" + self.logTail("plugin-manager-update.log")
-                )))
-                return
+            self.loadProfilePackages(tools: tools) { installedResult in
+                switch installedResult {
+                case .failure(let error): completion(.failure(error))
+                case .success(let installed):
+                    guard installed[package.name]?.version == package.version,
+                          self.profileBundles().contains(package.name) else {
+                        completion(.failure(self.messageError("dsh plugin 已退出成功，但 \(package.name) 没有以 \(package.version) 进入 web profile。\n\n" + self.logTail(logName))))
+                        return
+                    }
+                    completion(.success(()))
+                }
             }
-            self.reconcilePluginActivationState(
-                node: launch.node,
-                dsh: launch.dsh,
-                pnpm: launch.pnpm,
-                npm: launch.npm,
-                completion: completion
-            )
         }
     }
 
+    private func bundledPackages() throws -> BundledPackages {
+        guard let resourceURL = Bundle.main.resourceURL else { throw messageError("App 没有 Resources 目录。") }
+        let manifestURL = resourceURL.appendingPathComponent("packages/manifest.json")
+        let manifest = try JSONDecoder().decode(BundledPackages.self, from: Data(contentsOf: manifestURL))
+        guard manifest.schemaVersion == 1,
+              manifest.desktopRuntime.name == "@hanger-source/dsh-desktop-runtime",
+              manifest.pluginManager.name == "@hanger-source/hang-dsh-plugins",
+              validBundledPackage(manifest.desktopRuntime),
+              validBundledPackage(manifest.pluginManager) else {
+            throw messageError("App 随附的软件包清单无效。")
+        }
+        return manifest
+    }
+
+    private func validBundledPackage(_ package: BundledPackage) -> Bool {
+        !package.version.isEmpty
+            && package.archive == URL(fileURLWithPath: package.archive).lastPathComponent
+            && package.archive.hasSuffix(".tgz")
+            && package.sha256.count == 64
+            && package.sha256.allSatisfy(\.isHexDigit)
+    }
+
+    private func materialize(package: BundledPackage, from source: URL) throws -> URL {
+        let data = try Data(contentsOf: source)
+        let digest = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        guard digest == package.sha256 else {
+            throw messageError("App 随附的软件包校验失败：\(package.name)")
+        }
+        let directory = URL(fileURLWithPath: Env.runtimeDir).appendingPathComponent("packages", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appendingPathComponent(package.archive)
+        if let existing = try? Data(contentsOf: destination), existing == data { return destination }
+        try data.write(to: destination, options: .atomic)
+        return destination
+    }
+
+    private func isLegacyPluginManager(_ package: ProfilePackage) throws -> Bool {
+        let manifestURL = URL(fileURLWithPath: package.path).appendingPathComponent("package.json")
+        let data = try Data(contentsOf: manifestURL)
+        guard let manifest = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let dsh = manifest["dsh"] as? [String: Any] else {
+            throw messageError("Hang DSH Plugins 的 package.json 无效。")
+        }
+        return dsh["client"] != nil
+    }
+
+    private func migrateLegacyDesktopRuntime(
+        tools: Tools,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        migrateLegacyPluginState()
+        removeLegacyDesktopRuntime(at: 0, tools: tools, completion: completion)
+    }
+
+    private func removeLegacyDesktopRuntime(
+        at index: Int,
+        tools: Tools,
+        completion: @escaping (Result<Void, Error>) -> Void
+    ) {
+        guard index < legacyDesktopRuntimeNames.count else {
+            completion(.success(()))
+            return
+        }
+        let packageName = legacyDesktopRuntimeNames[index]
+        guard profileDeclaresPackage(packageName) else {
+            removeLegacyDesktopRuntime(at: index + 1, tools: tools, completion: completion)
+            return
+        }
+        runCommand(
+            executable: tools.dsh,
+            arguments: ["plugin", "--profile", "web", "remove", packageName],
+            environment: commandEnvironment(tools),
+            logName: "desktop-runtime-migration.log",
+            timeout: 300
+        ) { result in
+            if case .failure(let reason) = result {
+                completion(.failure(self.messageError("移除旧 Desktop 管理包失败：\(reason)\n\n" + self.logTail("desktop-runtime-migration.log"))))
+                return
+            }
+            self.removeLegacyDesktopRuntime(at: index + 1, tools: tools, completion: completion)
+        }
+    }
+
+    private func migrateLegacyPluginState() {
+        let profile = Env.dshHome + "/profiles/web"
+        let old = profile + "/.hang-dsh-plugins.json"
+        let current = profile + "/.dsh-desktop-plugins.json"
+        guard FileManager.default.fileExists(atPath: old) else { return }
+        if !FileManager.default.fileExists(atPath: current) {
+            try? FileManager.default.moveItem(atPath: old, toPath: current)
+        } else {
+            try? FileManager.default.removeItem(atPath: old)
+        }
+    }
     private func reconcilePluginActivationState(
         node: String,
         dsh: String,
@@ -266,88 +456,148 @@ final class RuntimeInstaller {
         npm: String?,
         completion: @escaping (Result<Void, Error>) -> Void
     ) {
-        let script = Env.dshHome + "/profiles/web/node_modules/@hanger-source/hang-dsh-plugins/host/reconcile.js"
-        guard FileManager.default.fileExists(atPath: script) else {
-            completion(.failure(messageError("基础插件状态入口不存在：\n\(script)")))
-            return
+        let tools = Tools(dsh: dsh, node: node, npm: npm, pnpm: pnpm)
+        loadProfilePackages(tools: tools) { result in
+            switch result {
+            case .failure(let error): completion(.failure(error))
+            case .success(let installed):
+                guard let managerPath = installed["@hanger-source/hang-dsh-plugins"]?.path else {
+                    completion(.failure(self.messageError("web profile 中没有 Hang DSH Plugins。")))
+                    return
+                }
+                let script = URL(fileURLWithPath: managerPath).appendingPathComponent("host/reconcile.js").path
+                guard FileManager.default.fileExists(atPath: script) else {
+                    completion(.failure(self.messageError("插件管理器缺少状态入口：\n\(script)")))
+                    return
+                }
+                var environment = self.commandEnvironment(tools)
+                environment["DSH_HOME"] = Env.dshHome
+                environment["DSH_EXECUTABLE"] = dsh
+                self.runCommand(
+                    executable: node,
+                    arguments: [script],
+                    environment: environment,
+                    logName: "plugin-activation.log",
+                    timeout: 30
+                ) { commandResult in
+                    if case .failure(let reason) = commandResult {
+                        completion(.failure(self.messageError("应用插件启用状态失败：\(reason)\n\n" + self.logTail("plugin-activation.log"))))
+                        return
+                    }
+                    completion(.success(()))
+                }
+            }
         }
-        var environment = Env.commandEnvironment(
-            executable: node,
-            additionalExecutables: [dsh, pnpm] + (npm.map { [$0] } ?? [])
+    }
+
+    private func profileManifest() -> [String: Any]? {
+        let path = Env.dshHome + "/profiles/web/package.json"
+        guard let data = FileManager.default.contents(atPath: path) else { return nil }
+        return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+    }
+
+    private func profileBundles() -> [String] {
+        guard let dsh = profileManifest()?["dsh"] as? [String: Any],
+              let profile = dsh["profile"] as? [String: Any],
+              let bundles = profile["bundles"] as? [String] else { return [] }
+        return bundles
+    }
+
+    private func profileDeclaresPackage(_ name: String) -> Bool {
+        let dependencies = profileManifest()?["dependencies"] as? [String: Any] ?? [:]
+        return dependencies[name] != nil || profileBundles().contains(name)
+    }
+
+    private func commandEnvironment(_ tools: Tools) -> [String: String] {
+        Env.commandEnvironment(
+            executable: tools.dsh,
+            additionalExecutables: [tools.node] + (tools.pnpm.map { [$0] } ?? []) + (tools.npm.map { [$0] } ?? [])
         )
-        environment["DSH_HOME"] = Env.dshHome
-        environment["DSH_EXECUTABLE"] = dsh
-        runCommand(
-            executable: node,
-            arguments: [script],
-            environment: environment,
-            logName: "plugin-activation.log",
+    }
+
+    private func loadProfilePackages(
+        tools: Tools,
+        completion: @escaping (Result<[String: ProfilePackage], Error>) -> Void
+    ) {
+        runCommandCapture(
+            executable: tools.dsh,
+            arguments: ["plugin", "--profile", "web", "list", "--json", "--depth=0"],
+            environment: commandEnvironment(tools),
             timeout: 30
         ) { result in
-            if case .failure(let reason) = result {
-                completion(.failure(self.messageError(
-                    "应用插件启用状态失败：\(reason)\n\n" + self.logTail("plugin-activation.log")
-                )))
-                return
+            switch result {
+            case .failure(let reason):
+                completion(.failure(self.messageError("读取 web profile 安装包失败：\(reason)")))
+            case .success(let data):
+                do {
+                    guard let rows = try JSONSerialization.jsonObject(with: data) as? [[String: Any]],
+                          let profile = rows.first else {
+                        throw self.messageError("dsh plugin list 没有返回有效的 profile。")
+                    }
+                    let dependencies = profile["dependencies"] as? [String: [String: Any]] ?? [:]
+                    if dependencies.isEmpty {
+                        completion(.success([:]))
+                        return
+                    }
+                    self.resolvePackageMetadata(
+                        Array(dependencies.keys),
+                        from: Env.dshHome + "/profiles/web",
+                        tools: tools
+                    ) { metadataResult in
+                        switch metadataResult {
+                        case .failure(let error): completion(.failure(error))
+                        case .success(let packages): completion(.success(packages))
+                        }
+                    }
+                } catch {
+                    completion(.failure(error))
+                }
             }
-            completion(.success(()))
         }
     }
 
-    private func installedPluginManagerVersion() -> String? {
-        let path = Env.dshHome + "/profiles/web/node_modules/@hanger-source/hang-dsh-plugins/package.json"
-        guard let data = FileManager.default.contents(atPath: path),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return nil }
-        return json["version"] as? String
-    }
-
-    private func isSemanticVersion(_ value: String) -> Bool {
-        value.range(
-            of: #"^[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$"#,
-            options: .regularExpression
-        ) != nil
-    }
-
-    private func compareSemanticVersions(_ left: String, _ right: String) -> Int {
-        func parse(_ value: String) -> ([Int], [String])? {
-            let parts = value.split(separator: "-", maxSplits: 1).map(String.init)
-            let core = parts[0].split(separator: ".").compactMap { Int($0) }
-            guard core.count == 3 else { return nil }
-            let prerelease = parts.count == 2 ? parts[1].split(separator: ".").map(String.init) : []
-            return (core, prerelease)
+    private func resolvePackageMetadata(
+        _ names: [String],
+        from resolutionBase: String,
+        tools: Tools,
+        completion: @escaping (Result<[String: ProfilePackage], Error>) -> Void
+    ) {
+        guard let resourceURL = Bundle.main.resourceURL else {
+            completion(.failure(messageError("App 没有 Resources 目录。")))
+            return
         }
-        guard let lhs = parse(left), let rhs = parse(right) else { return 0 }
-        for index in 0..<3 where lhs.0[index] != rhs.0[index] {
-            return lhs.0[index] < rhs.0[index] ? -1 : 1
+        let resolver = resourceURL.appendingPathComponent("tools/package-metadata.mjs").path
+        guard FileManager.default.fileExists(atPath: resolver) else {
+            completion(.failure(messageError("App 缺少 Node 包解析器。")))
+            return
         }
-        if lhs.1.isEmpty || rhs.1.isEmpty {
-            if lhs.1.isEmpty == rhs.1.isEmpty { return 0 }
-            return lhs.1.isEmpty ? 1 : -1
+        runCommandCapture(
+            executable: tools.node,
+            arguments: [resolver, resolutionBase] + names,
+            environment: commandEnvironment(tools),
+            timeout: 30
+        ) { result in
+            switch result {
+            case .failure(let reason): completion(.failure(self.messageError("解析 Node 包失败：\(reason)")))
+            case .success(let data):
+                do {
+                    guard let rows = try JSONSerialization.jsonObject(with: data) as? [String: [String: String]] else {
+                        throw self.messageError("Node 包解析器没有返回有效结果。")
+                    }
+                    var packages: [String: ProfilePackage] = [:]
+                    for name in names {
+                        guard let row = rows[name], let version = row["version"], let path = row["path"] else {
+                            throw self.messageError("Node 包解析器没有返回 \(name)。")
+                        }
+                        packages[name] = ProfilePackage(version: version, path: path)
+                    }
+                    completion(.success(packages))
+                } catch {
+                    completion(.failure(error))
+                }
+            }
         }
-        for index in 0..<max(lhs.1.count, rhs.1.count) {
-            if index >= lhs.1.count { return -1 }
-            if index >= rhs.1.count { return 1 }
-            let a = lhs.1[index]
-            let b = rhs.1[index]
-            if a == b { continue }
-            if let an = Int(a), let bn = Int(b) { return an < bn ? -1 : 1 }
-            if Int(a) != nil { return -1 }
-            if Int(b) != nil { return 1 }
-            return a < b ? -1 : 1
-        }
-        return 0
     }
-
-    private func profileHasPluginManagerBundle() -> Bool {
-        let path = Env.dshHome + "/profiles/web/package.json"
-        guard let data = FileManager.default.contents(atPath: path),
-              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dsh = json["dsh"] as? [String: Any],
-              let profile = dsh["profile"] as? [String: Any],
-              let bundles = profile["bundles"] as? [String] else { return false }
-        return bundles.contains(pluginManagerName)
-    }
-
     private func runCommand(
         executable: String,
         arguments: [String],
@@ -386,6 +636,59 @@ final class RuntimeInstaller {
                     ? .success
                     : .failure("命令退出码 \(child.terminationStatus)")
                 DispatchQueue.main.async { completion(result) }
+            } catch {
+                DispatchQueue.main.async { completion(.failure(error.localizedDescription)) }
+            }
+        }
+    }
+
+    private func runCommandCapture(
+        executable: String,
+        arguments: [String],
+        environment: [String: String],
+        timeout: TimeInterval,
+        completion: @escaping (CaptureResult) -> Void
+    ) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                let work = FileManager.default.temporaryDirectory.appendingPathComponent("dsh-command-" + UUID().uuidString, isDirectory: true)
+                try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: work) }
+                let outputURL = work.appendingPathComponent("stdout")
+                let errorURL = work.appendingPathComponent("stderr")
+                _ = FileManager.default.createFile(atPath: outputURL.path, contents: nil)
+                _ = FileManager.default.createFile(atPath: errorURL.path, contents: nil)
+                let output = try FileHandle(forWritingTo: outputURL)
+                let errors = try FileHandle(forWritingTo: errorURL)
+                defer {
+                    try? output.close()
+                    try? errors.close()
+                }
+                let child = Process()
+                child.executableURL = URL(fileURLWithPath: executable)
+                child.arguments = arguments
+                child.environment = environment
+                child.standardOutput = output
+                child.standardError = errors
+                let finished = DispatchSemaphore(value: 0)
+                child.terminationHandler = { _ in finished.signal() }
+                try child.run()
+                if finished.wait(timeout: .now() + timeout) == .timedOut {
+                    child.terminate()
+                    _ = finished.wait(timeout: .now() + 5)
+                    DispatchQueue.main.async { completion(.failure("命令超时：\(executable)")) }
+                    return
+                }
+                try output.synchronize()
+                try errors.synchronize()
+                let data = try Data(contentsOf: outputURL)
+                let errorData = try Data(contentsOf: errorURL)
+                guard child.terminationStatus == 0 else {
+                    let detail = String(data: errorData.isEmpty ? data : errorData, encoding: .utf8) ?? ""
+                    DispatchQueue.main.async { completion(.failure("命令退出码 \(child.terminationStatus)：\(detail)")) }
+                    return
+                }
+                DispatchQueue.main.async { completion(.success(data)) }
             } catch {
                 DispatchQueue.main.async { completion(.failure(error.localizedDescription)) }
             }
@@ -467,7 +770,13 @@ final class ServerManager {
     }
 
     func start(launch: RuntimeLaunch, completion: @escaping (StartupResult) -> Void) {
-        waitUntilAvailable(launch: launch, attempt: 0, completion: completion)
+        isListening(timeout: 0.25) { listening in
+            if listening {
+                completion(.failure("端口 \(Env.port) 已被现有服务占用。请先关闭该服务，再由 DSH.app 启动并持有它。"))
+                return
+            }
+            self.launchServer(launch: launch, completion: completion)
+        }
     }
 
     private func launchServer(launch: RuntimeLaunch, completion: @escaping (StartupResult) -> Void) {
@@ -487,11 +796,12 @@ final class ServerManager {
             environment["DSH_APP_VERSION"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
             environment["DSH_APP_BUNDLE_PATH"] = Bundle.main.bundlePath
             environment["DSH_EXECUTABLE"] = launch.dsh
+            environment["DSH_VERSION"] = launch.dshVersion
             if let npm = launch.npm { environment["DSH_NPM_EXECUTABLE"] = npm }
 
             let child = Process()
             child.executableURL = URL(fileURLWithPath: launch.dsh)
-            child.arguments = ["--profile", "web", "--no-open"]
+            child.arguments = ["--profile", "web", "--no-open", "--port", String(Env.port)]
             child.environment = environment
             child.standardOutput = logHandle
             child.standardError = logHandle
@@ -505,19 +815,15 @@ final class ServerManager {
             try child.run()
             process = child
             ownsServer = true
-            poll(attempt: 0, completion: completion)
+            poll(completion: completion)
         } catch {
             completion(.failure("启动 dsh web 失败：\(error.localizedDescription)"))
         }
     }
 
-    private func poll(attempt: Int, completion: @escaping (StartupResult) -> Void) {
+    private func poll(completion: @escaping (StartupResult) -> Void) {
         if process?.isRunning == false {
             completion(.failure("dsh web 已退出。\n\n" + serverLogTail()))
-            return
-        }
-        if attempt >= 40 {
-            completion(.failure("等待 dsh web 启动 URL 超时。\n\n" + serverLogTail()))
             return
         }
         isListening { ready in
@@ -528,7 +834,7 @@ final class ServerManager {
                 return
             }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                self.poll(attempt: attempt + 1, completion: completion)
+                self.poll(completion: completion)
             }
         }
     }
@@ -547,30 +853,25 @@ final class ServerManager {
     }
 
     func restart(launch: RuntimeLaunch, completion: @escaping (StartupResult) -> Void) {
-        guard ownsServer else {
+        guard ownsServer, let child = process, child.isRunning else {
             completion(.failure("当前 DSH 服务不由此 App 持有，无法自动应用插件。"))
             return
         }
-        stopOwnedServer()
-        waitUntilAvailable(launch: launch, attempt: 0, completion: completion)
-    }
-
-    private func waitUntilAvailable(
-        launch: RuntimeLaunch,
-        attempt: Int,
-        completion: @escaping (StartupResult) -> Void
-    ) {
-        if attempt >= 40 {
-            completion(.failure("端口 3080 持续被现有服务占用。请先关闭该服务，再由 DSH.app 启动并持有它。"))
-            return
-        }
-        isListening(timeout: 0.25) { listening in
-            if !listening {
-                self.launchServer(launch: launch, completion: completion)
-                return
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
-                self.waitUntilAvailable(launch: launch, attempt: attempt + 1, completion: completion)
+        Darwin.kill(child.processIdentifier, SIGTERM)
+        DispatchQueue.global(qos: .userInitiated).async {
+            child.waitUntilExit()
+            DispatchQueue.main.async {
+                self.process = nil
+                self.ownsServer = false
+                try? self.logHandle?.close()
+                self.logHandle = nil
+                self.isListening(timeout: 0.25) { listening in
+                    if listening {
+                        completion(.failure("原 DSH 服务退出后，端口 \(Env.port) 被其他服务占用。"))
+                        return
+                    }
+                    self.launchServer(launch: launch, completion: completion)
+                }
             }
         }
     }

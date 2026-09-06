@@ -2,3 +2,4 @@
 .runtime/
 .trash/
 .DS_Store
+node_modules/

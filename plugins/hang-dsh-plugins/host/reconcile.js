@@ -13,4 +13,9 @@ const repository = new ProfilePluginRepository({
   log: message => process.stdout.write(message + '\n'),
 })
 
-process.stdout.write(JSON.stringify(repository.reconcileActivation()) + '\n')
+Promise.resolve(repository.reconcileActivation()).then(result => {
+  process.stdout.write(JSON.stringify(result) + '\n')
+}, error => {
+  process.stderr.write((error.stack || error.message || String(error)) + '\n')
+  process.exitCode = 1
+})

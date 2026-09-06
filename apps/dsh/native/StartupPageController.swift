@@ -51,6 +51,29 @@ final class StartupPageController {
         webView?.loadHTMLString(html, baseURL: nil)
     }
 
+    func showStartupFailure(title: String, detail: String, canRestore: Bool, canRetry: Bool = true) {
+        stop()
+        let restore = canRestore
+            ? #"<button class="primary" onclick="send('restoreUpdate')">恢复更新前版本</button>"#
+            : ""
+        let retry = canRetry
+            ? #"<button onclick="send('retryStartup')">重新尝试启动</button>"#
+            : ""
+        let html = """
+        <!doctype html><meta charset="utf-8"><style>
+        :root{color-scheme:light dark;--bg:#fff;--layer:#f7f7f8;--primary:#0f1115;--secondary:#61666b;--border:rgb(0 0 0 / 10%);--error:#d92d20;--button:#0f1115;--button-label:#fff}
+        @media(prefers-color-scheme:dark){:root{--bg:#151517;--layer:#1d1d20;--primary:#f9fafb;--secondary:#cfd3d6;--border:rgb(255 255 255 / 12%);--error:#ff6b63;--button:#f9fafb;--button-label:#151517}}
+        *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--primary);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC",sans-serif;-webkit-font-smoothing:antialiased}
+        main{width:min(520px,calc(100vw - 48px));margin:0 auto;padding:12vh 0 48px}.brand{font-size:16px;line-height:24px;font-weight:600;letter-spacing:.08em;margin-bottom:48px}
+        .status{display:flex;align-items:center;gap:10px;margin-bottom:14px}.mark{width:8px;height:8px;border-radius:50%;background:var(--error)}.status h1{font-size:14px;line-height:22px;font-weight:600;margin:0}
+        pre{margin:0;padding:12px 14px;border:1px solid var(--border);border-radius:12px;background:var(--layer);color:var(--secondary);white-space:pre-wrap;word-break:break-word;font:12px/18px "SF Mono","JetBrains Mono",Menlo,monospace}
+        .actions{display:flex;gap:10px;margin-top:18px}button{appearance:none;border:1px solid var(--border);border-radius:10px;padding:9px 14px;background:transparent;color:var(--primary);font:13px/18px inherit;cursor:pointer}.primary{border-color:transparent;background:var(--button);color:var(--button-label)}
+        </style><main><div class="brand">DEEPSEEK HARNESS</div><div class="status"><span class="mark"></span><h1>\(escapeHTML(title))</h1></div><pre>\(escapeHTML(detail))</pre><div class="actions">\(restore)\(retry)</div></main>
+        <script>function send(action){window.webkit?.messageHandlers?.dshAppControl?.postMessage({action})}</script>
+        """
+        webView?.loadHTMLString(html, baseURL: nil)
+    }
+
     func stop() {
         timer?.invalidate()
         timer = nil

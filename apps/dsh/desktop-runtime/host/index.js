@@ -3,8 +3,8 @@
 const Fs = require('node:fs')
 const Os = require('node:os')
 const Path = require('node:path')
-const { ProfilePluginRepository } = require('./plugins.js')
-const { readJsonBody, sendJson } = require('./process.js')
+const { VersionService } = require('./versions.js')
+const { sendJson } = require('./process.js')
 
 module.exports = {
   inject: ['connection', 'webServer'],
@@ -12,18 +12,29 @@ module.exports = {
     const dshHome = process.env.DSH_HOME || Path.join(Os.homedir(), '.dsh')
     const runtimeDir = Path.join(dshHome, 'runtime', 'dsh-desktop')
     Fs.mkdirSync(runtimeDir, { recursive: true })
-    const logPath = Path.join(runtimeDir, 'plugin-manager.log')
+    const logPath = Path.join(runtimeDir, 'app-runtime.log')
     const log = message => {
       try { Fs.appendFileSync(logPath, new Date().toISOString() + ' ' + message + '\n') } catch (_error) {}
     }
-    const plugins = new ProfilePluginRepository({
+    const dshExecutable = process.env.DSH_EXECUTABLE || process.argv[1]
+    const versions = new VersionService({
+      appVersion: process.env.DSH_APP_VERSION,
+      appBundlePath: process.env.DSH_APP_BUNDLE_PATH,
+      dshVersion: process.env.DSH_VERSION,
+      dshExecutable,
       dshHome,
-      dshExecutable: process.env.DSH_EXECUTABLE || process.argv[1],
-      commandEnvironment: process.env,
       repository: process.env.DSH_DESKTOP_GITHUB || 'hanger-source/dsh-desktop',
-      sourceRoot: process.env.HANG_DSH_PLUGIN_SOURCE_ROOT,
-      log,
+      commandEnvironment: process.env,
     })
+
+    const parentPid = Number(process.env.DSH_PARENT_PID)
+    if (Number.isSafeInteger(parentPid) && parentPid > 1) {
+      const timer = setInterval(() => {
+        try { process.kill(parentPid, 0) } catch (_error) { process.kill(process.pid, 'SIGTERM') }
+      }, 1_000)
+      ctx.effect(() => () => clearInterval(timer))
+    }
+
     const webServer = ctx.get('webServer')
     const connection = ctx.get('connection')
     const route = (path, methods, handler) => {
@@ -48,17 +59,11 @@ module.exports = {
             sendJson(response, 500, { ok: false, error: error.message || String(error) })
           }
         },
-      }), 'hang-dsh-plugins: ' + path)
+      }), 'dsh-desktop-runtime: ' + path)
     }
 
-    route('/api/dsh-desktop/plugins', ['GET'], request => {
-      const url = new URL(request.url, 'http://localhost')
-      return plugins.list(url.searchParams.get('force') === '1')
-    })
-    route('/api/dsh-desktop/plugins/mutate', ['POST'], async request => {
-      const body = await readJsonBody(request)
-      return plugins.mutate(body.key, body.action, body.channel)
-    })
-    log('[plugin-manager] ready')
+    route('/api/dsh-desktop/status', ['GET'], () => versions.status())
+    route('/api/dsh-desktop/status/check', ['GET'], () => versions.check())
+    log('[app-runtime] ready app=' + (process.env.DSH_APP_VERSION || 'unknown'))
   },
 }

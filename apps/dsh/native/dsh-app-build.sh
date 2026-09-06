@@ -1,10 +1,11 @@
 #!/bin/bash
-# 构建 DSH Desktop 原生 App。插件管理器由 App 启动时通过 dsh plugin 安装。
+# 构建 DSH Desktop 原生 App。管理运行时随 App 一起分发。
 # 用法: bash dsh-app-build.sh [输出 App] [图标目录] [版本号]
 set -euo pipefail
 
 APP="${1:-$HOME/Applications/DSH.app}"
 SRC_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SRC_DIR/../../.." && pwd)"
 WORK="${2:-$SRC_DIR}"
 VERSION="${3:-0.0.0-dev}"
 BIN_DIR="$APP/Contents/MacOS"
@@ -14,7 +15,7 @@ ICON_SRC="$WORK"
 mkdir -p "$BIN_DIR" "$RS_DIR"
 
 # --- Swift 源码：原生壳按职责拆分，统一从本目录编译 ---
-SWIFT_SOURCES=(DSHApp.swift Runtime.swift DSHWindow.swift WebNavigationController.swift StartupPageController.swift AppUpdater.swift AppUpdateController.swift PluginManagerUpdateController.swift)
+SWIFT_SOURCES=(DSHApp.swift Runtime.swift DSHWindow.swift WebNavigationController.swift StartupPageController.swift AppUpdater.swift UpdateCoordinator.swift)
 for source in "${SWIFT_SOURCES[@]}"; do
 	if [ ! -f "$SRC_DIR/$source" ]; then
 		echo "缺少 $SRC_DIR/$source" >&2
@@ -46,10 +47,16 @@ BUILD="$(printf '%s' "$VERSION" | tr -cd '0-9' | cut -c1-12)"
 [ -n "$BUILD" ] || BUILD=1
 sed -i '' "s/__VERSION__/$VERSION/g; s/__BUILD__/$BUILD/g" "$APP/Contents/Info.plist"
 
+# --- 随 App 分发、带明确版本的软件包 ---
+node "$SRC_DIR/package-runtime.mjs" "$REPO_ROOT" "$RS_DIR" "$VERSION"
+mkdir -p "$RS_DIR/tools"
+ditto "$SRC_DIR/package-metadata.mjs" "$RS_DIR/tools/package-metadata.mjs"
+
 # --- 编译 ---
 swiftc -O -swift-version 5 -o "$BIN_DIR/DSHApp" \
-	"${SWIFT_SOURCES[@]/#/$BIN_DIR/}" \
-	-framework AppKit -framework WebKit
+		"${SWIFT_SOURCES[@]/#/$BIN_DIR/}" \
+		-framework AppKit -framework WebKit
+swiftc -O -swift-version 5 -o "$RS_DIR/tools/DSHUpdateHelper" "$SRC_DIR/UpdateHelper.swift"
 for source in "${SWIFT_SOURCES[@]}"; do
 	rm -f "$BIN_DIR/$source"
 done

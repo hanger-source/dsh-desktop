@@ -9,8 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var startupPage: StartupPageController!
     private var appliedPageTheme: String?
     private var currentLaunch: RuntimeLaunch?
-    private let appUpdateController = AppUpdateController()
-    private let pluginManagerUpdateController = PluginManagerUpdateController()
+    private let updateCoordinator = UpdateCoordinator()
     private lazy var webNavigationController = WebNavigationController(
         onFinish: { [weak self] webView in
             webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
@@ -30,7 +29,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         buildMenu()
         buildWindow()
         showWindow()
-        prepareAndStart()
+        if UpdateCheckpoint.shared.appInstallFailed {
+            showStartupFailure(
+                title: "DSH.app 安装失败",
+                detail: "新版 App 没有成功替换或打开，当前 App 已恢复。其余组件仍需要恢复到本次更新之前。"
+            )
+            return
+        }
+        if UpdateCheckpoint.shared.isPending && UpdateCheckpoint.shared.bootWasAttempted {
+            showStartupFailure(
+                title: "更新后的启动没有完成",
+                detail: "上一次启动没有收到 Desktop 运行时的就绪确认。可以恢复到更新前，也可以重新尝试启动。"
+            )
+            return
+        }
+        do {
+            try UpdateCheckpoint.shared.markBootAttempted()
+            prepareAndStart()
+        } catch {
+            showStartupFailure(title: "无法记录更新启动状态", detail: error.localizedDescription)
+        }
     }
 
     private func prepareAndStart() {
@@ -43,7 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 guard let self else { return }
                 switch result {
                 case .failure(let error):
-                    self.startupPage.showStatus(title: "DeepSeek Harness 准备失败", detail: error.localizedDescription, isError: true)
+                    self.showStartupFailure(title: "DeepSeek Harness 准备失败", detail: error.localizedDescription)
                 case .success(let launch):
                     self.currentLaunch = launch
                     self.startupPage.showProgress(title: "正在启动 DeepSeek Harness", detail: "正式 dsh 已就绪，正在启动 web 服务…", logName: "server.log")
@@ -58,12 +76,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private func handleStartup(_ result: StartupResult) {
         switch result {
         case .ready(let url):
-            AppUpdater.cleanupPreviousInstallation()
             startupPage.stop()
             webView.load(URLRequest(url: url))
         case .failure(let message):
-            startupPage.showStatus(title: "DeepSeek Harness 启动失败", detail: message, isError: true)
+            showStartupFailure(title: "DeepSeek Harness 启动失败", detail: message)
         }
+    }
+
+    private func showStartupFailure(title: String, detail: String) {
+        startupPage.showStartupFailure(
+            title: title,
+            detail: detail,
+            canRestore: UpdateCheckpoint.shared.isPending,
+            canRetry: !UpdateCheckpoint.shared.appInstallFailed
+        )
     }
 
     private func buildMenu() {
@@ -183,10 +209,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
               window.dshReportAppearance = report
 
               const attach = () => {
-                if (!document.head || !document.body) {
-                  window.setTimeout(attach, 20)
-                  return
-                }
                 document.head.appendChild(style)
                 if (!markFrame()) {
                   const frameObserver = new MutationObserver(() => {
@@ -200,7 +222,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', report)
                 report()
               }
-              attach()
+              if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', attach, { once: true })
+              } else {
+                attach()
+              }
             })()
             """,
             injectionTime: .atDocumentStart,
@@ -213,8 +239,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         webView.autoresizingMask = [.width, .height]
         webView.navigationDelegate = webNavigationController
         webView.uiDelegate = webNavigationController
-        appUpdateController.attach(to: webView)
-        pluginManagerUpdateController.attach(to: webView)
+        updateCoordinator.attach(to: webView)
         startupPage = StartupPageController(webView: webView)
         content.addSubview(webView)
         let dragView = TitlebarDragView(frame: NSRect(
@@ -268,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
             try relauncher.run()
             NSApp.terminate(nil)
         } catch {
-            startupPage.showStatus(title: "DSH.app 重启失败", detail: error.localizedDescription, isError: true)
+            showStartupFailure(title: "DSH.app 重启失败", detail: error.localizedDescription)
         }
     }
 
@@ -303,16 +328,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
                 return
             }
             if let command = message.body as? [String: Any] {
-                if command["action"] as? String == "reloadService" {
+                let action = command["action"] as? String
+                if action == "desktopRuntimeReady" {
+                    if UpdateCheckpoint.shared.isPending {
+                        do {
+                            try UpdateCheckpoint.shared.commit()
+                        } catch {
+                            ServerManager.shared.stopOwnedServer()
+                            showStartupFailure(title: "确认更新失败", detail: error.localizedDescription)
+                        }
+                    }
+                    return
+                }
+                if action == "retryStartup" {
+                    guard !UpdateCheckpoint.shared.appInstallFailed else { return }
+                    ServerManager.shared.stopOwnedServer()
+                    prepareAndStart()
+                    return
+                }
+                if action == "restoreUpdate" {
+                    ServerManager.shared.stopOwnedServer()
+                    startupPage.showProgress(title: "正在恢复更新前版本", detail: "正在恢复 App、dsh 和插件状态…", logName: "update-restore.log")
+                    UpdateCheckpoint.shared.restore(launch: currentLaunch) { [weak self] result in
+                        guard let self else { return }
+                        switch result {
+                        case .success(let relaunching):
+                            if relaunching { NSApp.terminate(nil) }
+                            else { self.restartApplication(nil) }
+                        case .failure(let error):
+                            self.showStartupFailure(title: "恢复失败", detail: error.localizedDescription)
+                        }
+                    }
+                    return
+                }
+                if action == "reloadService" {
                     reloadService()
                     return
                 }
-                if pluginManagerUpdateController.handle(
+                if updateCoordinator.handle(
                     command,
                     launch: currentLaunch,
-                    onInstalled: { [weak self] in self?.reloadService() }
+                    restart: { [weak self] in self?.restartApplication(nil) }
                 ) { return }
-                if appUpdateController.handle(command) { return }
             }
         }
         guard message.name == "dshAppearance",

@@ -1,11 +1,22 @@
 window.__ModuleLoader__.load({
-  id: '@hanger-source/hang-dsh-plugins',
+  id: '@hanger-source/dsh-desktop-runtime',
   factory: (require) => {
     const React = require('react')
     const inject = ['slots']
     const h = React.createElement
     const nativeControl = () => window.webkit?.messageHandlers?.dshAppControl
-    let appStatusSnapshot = null
+    const snapshotKey = name => 'dsh-desktop-runtime:' + name
+    const readSnapshot = name => {
+      try { return JSON.parse(window.sessionStorage.getItem(snapshotKey(name))) }
+      catch (_error) { return null }
+    }
+    const writeSnapshot = (name, value) => {
+      try { window.sessionStorage.setItem(snapshotKey(name), JSON.stringify(value)) }
+      catch (_error) {}
+      return value
+    }
+    let appStatusSnapshot = readSnapshot('versions')
+    let pluginStateSnapshot = readSnapshot('plugins')
 
     async function api(path, options = {}) {
       const response = await fetch('/api/dsh-desktop' + path, {
@@ -22,7 +33,7 @@ window.__ModuleLoader__.load({
 
     function installStyles() {
       const style = document.createElement('style')
-      style.id = 'hang-dsh-plugins-styles'
+      style.id = 'dsh-desktop-runtime-styles'
       style.textContent = [
         '.dsh-desktop-root{display:flex;flex-direction:column;gap:12px;padding:4px 2px 16px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:20px}',
         '.dsh-desktop-card{display:flex;flex-direction:column;gap:8px;padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}',
@@ -61,6 +72,14 @@ window.__ModuleLoader__.load({
         '.dsh-plugin-state-dot[data-enabled]{background:var(--dsw-alias-state-success-primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--dsw-alias-state-success-primary) 14%,transparent)}',
         '.dsh-plugin-channel-tag{position:absolute;z-index:1;top:11px;right:-34px;width:108px;padding:2px 0;text-align:center;font-size:11px;font-weight:600;line-height:17px;letter-spacing:.2px;background:var(--dsw-alias-interactive-bg-hover);color:var(--dsw-alias-label-tertiary);transform:rotate(45deg);transform-origin:center;pointer-events:none}',
         '.dsh-plugin-channel-tag[data-beta]{background:var(--dsw-alias-state-warn-tertiary);color:var(--dsw-alias-state-warn-primary)}',
+        '.dsh-update-dialog-backdrop{position:fixed;inset:0;z-index:1000;display:grid;place-items:center;padding:28px;background:rgb(0 0 0 / 28%)}',
+        '.dsh-update-dialog{width:min(520px,100%);max-height:min(640px,calc(100vh - 56px));display:flex;flex-direction:column;gap:16px;padding:20px;border:1px solid var(--dsw-alias-border-l1);border-radius:16px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 20px 60px rgb(0 0 0 / 24%)}',
+        '.dsh-update-dialog-title{font-size:16px;font-weight:650;color:var(--dsw-alias-label-primary)}',
+        '.dsh-update-dialog-list{display:flex;flex-direction:column;gap:8px;overflow:auto}',
+        '.dsh-update-dialog-option{display:grid;grid-template-columns:18px minmax(0,1fr);gap:10px;align-items:start;padding:11px 12px;border:1px solid var(--dsw-alias-border-l1);border-radius:10px;cursor:pointer}',
+        '.dsh-update-dialog-option input{margin:3px 0 0;width:15px;height:15px}',
+        '.dsh-update-dialog-name{display:block;font-weight:600;color:var(--dsw-alias-label-primary)}',
+        '.dsh-update-dialog-actions{display:flex;justify-content:flex-end;gap:10px}',
         '.hHd-Xa_root:not(.hHd-Xa_collapsed){padding-bottom:4px!important}',
         '.hHd-Xa_footArea{display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;align-items:center!important;column-gap:8px!important}',
         '.hHd-Xa_footerActions{display:contents!important}',
@@ -167,59 +186,138 @@ window.__ModuleLoader__.load({
       }
     }
 
+    function componentUpdateCandidates() {
+      const candidates = []
+      const app = appStatusSnapshot?.app
+      const dsh = appStatusSnapshot?.dsh
+      if (app?.updateAvailable && app.assetUrl && app.checksumUrl && app.latest) {
+        candidates.push({
+          key: 'app',
+          name: 'DSH Desktop',
+          detail: `${app.installed} → ${app.latest}`,
+          target: { kind: 'app', key: 'app', version: app.latest, url: app.assetUrl, checksumUrl: app.checksumUrl },
+        })
+      }
+      const pluginManager = appStatusSnapshot?.pluginManager
+      if (pluginManager?.updateAvailable && pluginManager.target) {
+        candidates.push({
+          key: 'plugin-manager',
+          name: 'Hang DSH Plugins',
+          detail: `${pluginManager.installed || '未安装'} → ${pluginManager.latest}`,
+          target: pluginManager.target,
+        })
+      }
+      if (dsh?.updateAvailable && dsh.latest) {
+        candidates.push({
+          key: 'dsh',
+          name: '@deepseek-ai/dsh',
+          detail: `${dsh.installed} → ${dsh.latest}`,
+          target: { kind: 'dsh', key: 'dsh', version: dsh.latest },
+        })
+      }
+      return candidates
+    }
+
+    function pluginUpdateCandidates() {
+      const candidates = []
+      for (const plugin of pluginStateSnapshot?.plugins || []) {
+        if (!plugin.installed || !plugin.updateAvailable || !plugin.target) continue
+        candidates.push({
+          key: 'plugin:' + plugin.key,
+          name: plugin.name,
+          detail: `${plugin.installedVersion} → ${plugin.target.version}`,
+          target: plugin.target,
+        })
+      }
+      return candidates
+    }
+
+    function availableUpdateCandidates() {
+      return [...componentUpdateCandidates(), ...pluginUpdateCandidates()]
+    }
+
+    function applyUpdateCandidates(candidates) {
+      const bridge = nativeControl()
+      if (!bridge) throw new Error('只有 Desktop App 可以安装更新')
+      if (!candidates.length) throw new Error('没有选择更新')
+      bridge.postMessage({ action: 'applyUpdates', targets: candidates.map(candidate => candidate.target) })
+    }
+
+    function UpdateSelectionDialog({ candidates, busy, onClose }) {
+      const [selected, setSelected] = React.useState(() => new Set(candidates.map(candidate => candidate.key)))
+      const toggle = key => setSelected(current => {
+        const next = new Set(current)
+        if (next.has(key)) next.delete(key)
+        else next.add(key)
+        return next
+      })
+      const apply = () => applyUpdateCandidates(candidates.filter(candidate => selected.has(candidate.key)))
+      return h('div', { className: 'dsh-update-dialog-backdrop', role: 'presentation', onMouseDown: event => {
+        if (event.target === event.currentTarget && !busy) onClose()
+      } }, h('div', { className: 'dsh-update-dialog', role: 'dialog', 'aria-modal': true, 'aria-label': '选择更新' }, [
+        h('div', { className: 'dsh-update-dialog-title' }, '选择更新'),
+        h('div', { className: 'dsh-desktop-muted' }, '只安装勾选的项目，完成后统一重启一次。'),
+        h('div', { className: 'dsh-update-dialog-list' }, candidates.map(candidate => h('label', {
+          key: candidate.key,
+          className: 'dsh-update-dialog-option',
+        }, [
+          h('input', {
+            type: 'checkbox',
+            checked: selected.has(candidate.key),
+            disabled: busy,
+            onChange: () => toggle(candidate.key),
+          }),
+          h('span', null, [
+            h('span', { className: 'dsh-update-dialog-name' }, candidate.name),
+            h('span', { className: 'dsh-desktop-muted' }, candidate.detail),
+          ]),
+        ]))),
+        h('div', { className: 'dsh-update-dialog-actions' }, [
+          h('button', { className: 'dsh-desktop-btn', disabled: busy, onClick: onClose }, '取消'),
+          h('button', {
+            className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+            disabled: busy || selected.size === 0 || !nativeControl(),
+            onClick: apply,
+          }, busy ? '正在更新…' : `更新所选（${selected.size}）`),
+        ]),
+      ]))
+    }
+
     function AppSection() {
       const [state, setState] = React.useState({
         loading: !appStatusSnapshot,
         value: appStatusSnapshot,
         error: null,
       })
-      const [checking, setChecking] = React.useState({})
-      const [checkFeedback, setCheckFeedback] = React.useState({})
-      const [busy, setBusy] = React.useState(null)
+      const [checking, setChecking] = React.useState(false)
+      const [busy, setBusy] = React.useState(false)
       const [message, setMessage] = React.useState(null)
-      const feedbackTimers = React.useRef({})
-
-      const flashLatest = React.useCallback(key => {
-        if (feedbackTimers.current[key]) window.clearTimeout(feedbackTimers.current[key])
-        setCheckFeedback(previous => ({ ...previous, [key]: true }))
-        feedbackTimers.current[key] = window.setTimeout(() => {
-          delete feedbackTimers.current[key]
-          setCheckFeedback(previous => ({ ...previous, [key]: false }))
-        }, 2500)
-      }, [])
-
-      React.useEffect(() => () => {
-        for (const timer of Object.values(feedbackTimers.current)) window.clearTimeout(timer)
-      }, [])
+      const [pickerOpen, setPickerOpen] = React.useState(false)
 
       const load = React.useCallback(async () => {
-        setState(previous => ({ ...previous, loading: true, error: null }))
         try {
           const value = await api('/status')
-          appStatusSnapshot = value
+          appStatusSnapshot = writeSnapshot('versions', value)
           setState({ loading: false, value, error: null })
         } catch (error) {
           setState(previous => ({ loading: false, value: previous.value, error: error.message || String(error) }))
         }
       }, [])
-
       React.useEffect(() => { load() }, [load])
 
-      const check = async (key, endpoint) => {
-        setChecking(previous => ({ ...previous, [key]: true }))
+      const checkUpdates = async () => {
+        setChecking(true)
+        setMessage(null)
         try {
-          const result = await api('/status/' + endpoint)
-          setState(previous => {
-            const value = { ...(previous.value || {}), [key]: result }
-            appStatusSnapshot = value
-            return { loading: false, value, error: null }
-          })
-          const error = key === 'dsh' ? result.latestError : result.error
-          if (!error && result.updateAvailable === false) flashLatest(key)
+          const value = await api('/status/check')
+          appStatusSnapshot = writeSnapshot('versions', value)
+          setState({ loading: false, value, error: null })
+          const count = availableUpdateCandidates().length
+          setMessage({ kind: 'ok', text: count ? `检查完成，当前有 ${count} 项可以更新。` : '检查完成，当前没有可用更新。' })
         } catch (error) {
           setState(previous => ({ ...previous, error: error.message || String(error) }))
         } finally {
-          setChecking(previous => ({ ...previous, [key]: false }))
+          setChecking(false)
         }
       }
 
@@ -227,202 +325,159 @@ window.__ModuleLoader__.load({
         const receiveUpdate = event => {
           const detail = event.detail || {}
           if (detail.state === 'failed') {
-            setBusy(null)
-            setMessage({ kind: 'error', text: 'App 更新失败：' + (detail.message || '未知错误') })
+            setBusy(false)
+            setMessage({ kind: 'error', text: detail.message || '更新失败' })
             return
           }
-          setBusy('app')
-          setMessage({ kind: 'ok', text: detail.message || '正在更新 APP…' })
+          setBusy(true)
+          setMessage({ kind: 'ok', text: detail.message || '正在更新…' })
         }
-        window.addEventListener('dsh-app-update', receiveUpdate)
-        return () => window.removeEventListener('dsh-app-update', receiveUpdate)
+        window.addEventListener('dsh-update-transaction', receiveUpdate)
+        return () => window.removeEventListener('dsh-update-transaction', receiveUpdate)
       }, [])
-
-      React.useEffect(() => {
-        const receiveUpdate = event => {
-          const detail = event.detail || {}
-          if (detail.state === 'failed') {
-            setBusy(null)
-            setMessage({ kind: 'error', text: '基础插件更新失败：' + (detail.message || '未知错误') })
-            return
-          }
-          setBusy('plugin-manager')
-          setMessage({ kind: 'ok', text: detail.message || '正在更新基础插件…' })
-        }
-        window.addEventListener('dsh-plugin-manager-update', receiveUpdate)
-        return () => window.removeEventListener('dsh-plugin-manager-update', receiveUpdate)
-      }, [])
-
-      const restart = () => nativeControl()?.postMessage('restart')
-      const updateApp = () => {
-        const bridge = nativeControl()
-        if (!bridge || !app.assetUrl || !app.checksumUrl || !app.latest) return
-        setBusy('app')
-        setMessage({ kind: 'ok', text: '正在准备 App 更新…' })
-        bridge.postMessage({
-          action: 'updateApp',
-          url: app.assetUrl,
-          checksumUrl: app.checksumUrl,
-          version: app.latest,
-        })
-      }
-      const updateDsh = async () => {
-        setBusy('dsh')
-        setMessage(null)
-        try {
-          await api('/dsh/update', { method: 'POST' })
-          setMessage({ kind: 'ok', text: 'dsh 已更新，正在重启 App…' })
-          window.setTimeout(restart, 400)
-        } catch (error) {
-          setMessage({ kind: 'error', text: 'dsh 更新失败：' + (error.message || String(error)) })
-          setBusy(null)
-        }
-      }
-      const updatePluginManager = () => {
-        const bridge = nativeControl()
-        if (!bridge || !pluginManager.latest) return
-        setBusy('plugin-manager')
-        setMessage({ kind: 'ok', text: '正在准备基础插件更新…' })
-        bridge.postMessage({
-          action: 'updatePluginManager',
-          version: pluginManager.latest,
-        })
-      }
 
       const value = state.value || {}
       const app = value.app || {}
       const pluginManager = value.pluginManager || {}
       const dsh = value.dsh || {}
-      const status = (key, installed, latest, available, error) => h('div', { className: 'dsh-version-status' }, [
-        installed ? h('span', null, installed) : null,
-        !checking[key] && latest && available === true
-          ? h('span', { className: 'dsh-desktop-muted' }, '最新 ' + latest)
-          : null,
-        !checking[key] && available === true
-          ? h('span', { className: 'dsh-desktop-warn' }, '有更新')
-          : null,
-        !checking[key] && error ? h('span', { className: 'dsh-desktop-error' }, error) : null,
+      const candidates = availableUpdateCandidates()
+      const candidate = key => candidates.find(item => item.key === key)
+      const updateOne = key => {
+        const item = candidate(key)
+        if (!item) return
+        setBusy(true)
+        setMessage({ kind: 'ok', text: '正在准备更新…' })
+        applyUpdateCandidates([item])
+      }
+      const status = (installed, latest, available, error) => h('div', { className: 'dsh-version-status' }, [
+        h('span', { className: installed ? undefined : 'dsh-desktop-muted' }, installed || '—'),
+        latest && available === true ? h('span', { className: 'dsh-desktop-muted' }, '最新 ' + latest) : null,
+        available === true ? h('span', { className: 'dsh-desktop-warn' }, '有更新') : null,
+        error ? h('span', { className: 'dsh-desktop-error' }, error) : null,
       ])
 
       return h('div', { className: 'dsh-desktop-root dsh-desktop-app-root' }, [
         h('div', { className: 'dsh-desktop-version-card' }, [
           h('div', { className: 'dsh-version-header' }, [
-            h('span', { className: 'dsh-desktop-title' }, 'DSH Desktop'),
-            status('app', app.installed, app.latest, app.updateAvailable, app.error),
+            h('span', { className: 'dsh-desktop-title' }, '组件更新'),
           ]),
           h('div', { className: 'dsh-desktop-row dsh-version-actions' }, [
             h('button', {
-              className: 'dsh-desktop-btn' + (checkFeedback.app ? ' dsh-desktop-btn-ok' : ''),
-              disabled: state.loading || checking.app,
-              onClick: () => check('app', 'app'),
-            }, checking.app ? '检查中…' : (checkFeedback.app ? '已是最新' : '检查更新')),
-            app.updateAvailable
-              ? h('button', {
-                  className: 'dsh-desktop-btn dsh-desktop-btn-primary',
-                  disabled: busy === 'app' || !nativeControl() || !app.assetUrl || !app.checksumUrl,
-                  onClick: updateApp,
-                }, busy === 'app' ? '正在更新…' : '更新 APP')
-              : null,
-            h('button', { className: 'dsh-desktop-btn', disabled: !nativeControl(), onClick: restart }, '重启 APP'),
+              className: 'dsh-desktop-btn',
+              disabled: checking || busy,
+              onClick: checkUpdates,
+            }, checking ? '检查中…' : '检查更新'),
+            candidates.length > 0 ? h('button', {
+              className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+              disabled: checking || busy,
+              onClick: () => setPickerOpen(true),
+            }, '选择更新') : null,
+          ]),
+          h('div', { className: 'dsh-desktop-muted dsh-version-detail' }, '检查后可以选择需要的更新，也可以直接更新某个组件；所选项目统一安装并只重启一次。'),
+        ]),
+        h('div', { className: 'dsh-desktop-version-card' }, [
+          h('div', { className: 'dsh-version-header' }, [
+            h('span', { className: 'dsh-desktop-title' }, 'DSH Desktop'),
+            status(app.installed, app.latest, app.updateAvailable, app.error),
+          ]),
+          h('div', { className: 'dsh-desktop-row dsh-version-actions' }, [
+            app.updateAvailable ? h('button', {
+              className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+              disabled: busy || !nativeControl(),
+              onClick: () => updateOne('app'),
+            }, '更新') : null,
+            h('button', {
+              className: 'dsh-desktop-btn',
+              disabled: busy || !nativeControl(),
+              onClick: () => nativeControl()?.postMessage('restart'),
+            }, '重启 APP'),
           ]),
           app.bundlePath ? h('div', { className: 'dsh-desktop-muted dsh-desktop-mono dsh-version-detail' }, app.bundlePath) : null,
         ]),
         h('div', { className: 'dsh-desktop-version-card' }, [
           h('div', { className: 'dsh-version-header' }, [
-            h('span', {
-              className: 'dsh-plugin-state-dot',
-              'data-enabled': (!state.loading && pluginManager.enabled) || undefined,
-              title: pluginManager.enabled ? '已启用' : '未启用',
-              'aria-label': pluginManager.enabled ? '已启用' : '未启用',
-            }),
             h('span', { className: 'dsh-desktop-title' }, 'Hang DSH Plugins'),
-            state.loading && !state.value
-              ? h('span', { className: 'dsh-desktop-muted' }, '正在读取基础插件状态…')
-              : status('pluginManager', pluginManager.installed, pluginManager.latest, pluginManager.updateAvailable, pluginManager.error),
+            status(pluginManager.installed, pluginManager.latest, pluginManager.updateAvailable, pluginManager.error),
           ]),
-          h('div', { className: 'dsh-desktop-actions dsh-version-actions' }, [
-            h('span', { className: 'dsh-desktop-badge' }, '基础插件'),
-            pluginManager.updateAvailable
-              ? h('button', {
-                  className: 'dsh-desktop-btn dsh-desktop-btn-primary',
-                  disabled: busy === 'plugin-manager' || !nativeControl() || !pluginManager.latest,
-                  onClick: updatePluginManager,
-                }, busy === 'plugin-manager' ? '正在更新…' : '更新')
-              : h('button', {
-                  className: 'dsh-desktop-btn' + (checkFeedback.pluginManager ? ' dsh-desktop-btn-ok' : ''),
-                  disabled: state.loading || busy === 'plugin-manager' || checking.pluginManager,
-                  onClick: () => check('pluginManager', 'plugin-manager'),
-                }, checking.pluginManager ? '检查中…' : (checkFeedback.pluginManager ? '已是最新' : '检查更新')),
+          h('div', { className: 'dsh-desktop-row dsh-version-actions' }, [
+            pluginManager.updateAvailable ? h('button', {
+              className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+              disabled: busy || !nativeControl(),
+              onClick: () => updateOne('plugin-manager'),
+            }, '更新') : null,
           ]),
-          h('div', { className: 'dsh-desktop-muted dsh-version-detail' }, '由 Desktop App 安装、更新和修复，不经过插件自身的管理链路。'),
+          h('div', { className: 'dsh-desktop-muted dsh-version-detail' }, '插件目录与启停服务独立发布，也可与其他组件一起更新并统一重启。'),
         ]),
         h('div', { className: 'dsh-desktop-version-card dsh-version-last' }, [
           h('div', { className: 'dsh-version-header' }, [
             h('span', { className: 'dsh-desktop-title' }, '@deepseek-ai/dsh'),
-            status('dsh', dsh.installed, dsh.latest, dsh.updateAvailable, dsh.installedError || dsh.latestError),
+            status(dsh.installed, dsh.latest, dsh.updateAvailable, dsh.installedError || dsh.latestError),
           ]),
           h('div', { className: 'dsh-desktop-row dsh-version-actions' }, [
-            h('button', {
-              className: 'dsh-desktop-btn' + (checkFeedback.dsh ? ' dsh-desktop-btn-ok' : ''),
-              disabled: state.loading || checking.dsh,
-              onClick: () => check('dsh', 'dsh'),
-            }, checking.dsh ? '检查中…' : (checkFeedback.dsh ? '已是最新' : '检查更新')),
             dsh.updateAvailable ? h('button', {
               className: 'dsh-desktop-btn dsh-desktop-btn-primary',
-              disabled: busy === 'dsh',
-              onClick: updateDsh,
-            }, busy === 'dsh' ? '正在更新…' : '更新并重启 APP') : null,
+              disabled: busy || !nativeControl(),
+              onClick: () => updateOne('dsh'),
+            }, '更新') : null,
           ]),
-          h('div', { className: 'dsh-desktop-muted dsh-version-detail' }, 'npm 包更新后必须重启 App，新的 dsh 进程才会生效。'),
+          h('div', { className: 'dsh-desktop-muted dsh-version-detail' }, '由 npmjs 提供；与其他所选更新一起安装并统一重启。'),
         ]),
         state.error ? h('div', { className: 'dsh-desktop-error' }, '检查更新失败：' + state.error) : null,
         message ? h('div', { className: message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-error' }, message.text) : null,
+        pickerOpen ? h(UpdateSelectionDialog, {
+          candidates,
+          busy,
+          onClose: () => setPickerOpen(false),
+        }) : null,
       ])
     }
-
     function PluginSection() {
-      const [state, setState] = React.useState({ loading: true, value: null, error: null })
+      const [state, setState] = React.useState({
+        loading: !pluginStateSnapshot,
+        value: pluginStateSnapshot,
+        error: null,
+      })
       const [busy, setBusy] = React.useState(null)
       const [channels, setChannels] = React.useState({})
       const [message, setMessage] = React.useState(null)
-      const [checked, setChecked] = React.useState(false)
-      const messageTimer = React.useRef(null)
+      const [pickerOpen, setPickerOpen] = React.useState(false)
 
-      const flashMessage = React.useCallback(text => {
-        if (messageTimer.current) window.clearTimeout(messageTimer.current)
-        setMessage({ kind: 'ok', text })
-        messageTimer.current = window.setTimeout(() => {
-          messageTimer.current = null
-          setMessage(null)
-        }, 2500)
-      }, [])
-
-      React.useEffect(() => () => {
-        if (messageTimer.current) window.clearTimeout(messageTimer.current)
-      }, [])
-
-      const load = React.useCallback(async (force = false) => {
+      const load = React.useCallback(async (refresh = false) => {
         setState(previous => ({ ...previous, loading: true, error: null }))
-        if (force) setMessage({ kind: 'info', text: '正在检查插件更新…' })
         try {
-          const value = await api('/plugins' + (force ? '?force=1' : ''))
+          const value = await api('/plugins' + (refresh ? '?force=1' : ''))
+          pluginStateSnapshot = writeSnapshot('plugins', value)
           setState({ loading: false, value, error: null })
           setChannels(current => Object.fromEntries(value.plugins.map(plugin => [
             plugin.key,
             current[plugin.key] || plugin.channel,
           ])))
-          if (force) {
-            setChecked(true)
-            const count = value.plugins.filter(plugin => plugin.updateAvailable).length
-            flashMessage(count > 0 ? `检查完成，${count} 个插件可以更新。` : '检查完成，所有插件已是最新。')
+          if (refresh) {
+            const count = value.plugins.filter(plugin => plugin.installed && plugin.updateAvailable).length
+            setMessage({ kind: 'ok', text: count ? `检查完成，当前有 ${count} 个插件可以更新。` : '检查完成，当前没有插件更新。' })
           }
         } catch (error) {
           const text = error.message || String(error)
           setState(previous => ({ loading: false, value: previous.value, error: text }))
-          if (force) setMessage({ kind: 'error', text: '检查更新失败：' + text })
+          if (refresh) setMessage({ kind: 'error', text: '检查更新失败：' + text })
         }
-      }, [flashMessage])
+      }, [])
       React.useEffect(() => { load(false) }, [load])
+
+      React.useEffect(() => {
+        const receiveUpdate = event => {
+          const detail = event.detail || {}
+          if (detail.state === 'failed') {
+            setBusy(null)
+            setMessage({ kind: 'error', text: detail.message || '更新失败' })
+            return
+          }
+          setBusy('updates')
+          setMessage({ kind: 'ok', text: detail.message || '正在更新…' })
+        }
+        window.addEventListener('dsh-update-transaction', receiveUpdate)
+        return () => window.removeEventListener('dsh-update-transaction', receiveUpdate)
+      }, [])
 
       const mutate = async (plugin, action) => {
         const channel = channels[plugin.key] || plugin.channel
@@ -432,11 +487,11 @@ window.__ModuleLoader__.load({
           await api('/plugins/mutate', { method: 'POST', body: { key: plugin.key, action, channel } })
           const bridge = nativeControl()
           if (bridge) {
-            setMessage({ kind: 'ok', text: '插件已处理，正在应用…' })
-            window.setTimeout(() => bridge.postMessage({ action: 'reloadService' }), 150)
+            setMessage({ kind: 'ok', text: '插件状态已保存，正在重新加载…' })
+            bridge.postMessage({ action: 'reloadService' })
           } else {
-            setMessage({ kind: 'ok', text: '插件已处理，重启 dsh 后生效。' })
-            await load(true)
+            await load(false)
+            setBusy(null)
           }
         } catch (error) {
           setMessage({ kind: 'error', text: error.message || String(error) })
@@ -444,20 +499,42 @@ window.__ModuleLoader__.load({
         }
       }
 
-      if (state.loading && !state.value) {
-        return h('div', { className: 'dsh-desktop-root' }, h('span', { className: 'dsh-desktop-muted' }, '正在读取插件版本…'))
+      const updatePlugin = (plugin, channel) => {
+        const target = plugin.targets?.[channel]
+        if (!target) return
+        const candidate = {
+          key: 'plugin:' + plugin.key,
+          name: plugin.name,
+          detail: `${plugin.installedVersion} → ${target.version}`,
+          target,
+        }
+        setBusy('updates')
+        setMessage({ kind: 'ok', text: '正在准备更新…' })
+        applyUpdateCandidates([candidate])
       }
+
       const view = state.value || { plugins: [] }
+      const candidates = pluginUpdateCandidates()
       return h('div', { className: 'dsh-desktop-root' }, [
         h('div', { className: 'dsh-desktop-row' }, [
-          h('span', { className: 'dsh-desktop-muted dsh-desktop-grow' }, '每个插件独立安装、更新和停用，变更后自动应用。'),
-          h('button', { className: 'dsh-desktop-btn', disabled: busy !== null || state.loading, onClick: () => load(true) }, state.loading ? '检查中…' : '检查更新'),
+          h('span', { className: 'dsh-desktop-muted dsh-desktop-grow' }, '插件独立选择版本和启停；检查后可单独更新，也可与其他组件一起更新。'),
+          h('button', {
+            className: 'dsh-desktop-btn',
+            disabled: busy !== null || state.loading,
+            onClick: () => load(true),
+          }, state.loading ? '检查中…' : '检查更新'),
+          candidates.length > 0 ? h('button', {
+            className: 'dsh-desktop-btn dsh-desktop-btn-primary',
+            disabled: busy !== null || state.loading,
+            onClick: () => setPickerOpen(true),
+          }, '选择更新') : null,
         ]),
         ...view.plugins.map(plugin => {
           const channel = channels[plugin.key] || plugin.channel
-          const release = plugin.releases[channel]
+          const target = plugin.targets?.[channel]
           const channelChanged = channel !== plugin.channel
-          const showUpdate = plugin.installed && (channelChanged || (checked && plugin.updateAvailable))
+          const versionChanged = Boolean(plugin.installed && target && plugin.installedVersion !== target.version)
+          const showUpdate = plugin.installed && (channelChanged || plugin.updateAvailable) && versionChanged
           const toggleAction = plugin.enabled ? 'disable' : 'enable'
           return h('div', { key: plugin.key, className: 'dsh-plugin-item' }, [
             h('div', { className: 'dsh-plugin-summary' }, [
@@ -469,7 +546,7 @@ window.__ModuleLoader__.load({
               }),
               h('span', { className: 'dsh-plugin-name' }, plugin.name),
               h('span', { className: 'dsh-plugin-version' }, plugin.installedVersion
-                ? plugin.installedVersion + (checked && plugin.updateAvailable && release ? ' · 最新 ' + release.version : '')
+                ? plugin.installedVersion + (plugin.updateAvailable && plugin.latestVersion ? ' · 最新 ' + plugin.latestVersion : '')
                 : '未安装'),
             ]),
             h('span', {
@@ -490,9 +567,9 @@ window.__ModuleLoader__.load({
               ]),
               showUpdate ? h('button', {
                 className: 'dsh-desktop-btn dsh-desktop-btn-primary',
-                disabled: busy !== null,
-                onClick: () => mutate(plugin, 'update'),
-              }, busy === plugin.key + ':update' ? '处理中…' : (channelChanged ? '切换' : '更新')) : null,
+                disabled: busy !== null || !nativeControl(),
+                onClick: () => updatePlugin(plugin, channel),
+              }, channelChanged ? '切换' : '更新') : null,
               h('button', {
                 className: 'dsh-desktop-btn',
                 disabled: busy !== null,
@@ -503,13 +580,15 @@ window.__ModuleLoader__.load({
         }),
         state.error ? h('div', { className: 'dsh-desktop-error' }, state.error) : null,
         message ? h('div', {
-          className: message.kind === 'error'
-            ? 'dsh-desktop-error'
-            : message.kind === 'ok' ? 'dsh-desktop-ok' : 'dsh-desktop-muted',
+          className: message.kind === 'error' ? 'dsh-desktop-error' : 'dsh-desktop-ok',
         }, message.text) : null,
+        pickerOpen ? h(UpdateSelectionDialog, {
+          candidates,
+          busy: busy === 'updates',
+          onClose: () => setPickerOpen(false),
+        }) : null,
       ])
     }
-
     function apply(ctx) {
       ctx.effect(() => {
         const disposeStyles = installStyles()
@@ -527,6 +606,7 @@ window.__ModuleLoader__.load({
           { name: 'sidebar.footer.action', id: 'cordis-empty', order: 5 },
           props => h(CordisEmptyAction, props),
         ))
+        nativeControl()?.postMessage({ action: 'desktopRuntimeReady' })
         return () => {
           if (typeof disposePlugins === 'function') disposePlugins()
           if (typeof disposeApp === 'function') disposeApp()
@@ -534,7 +614,7 @@ window.__ModuleLoader__.load({
           disposeIcons()
           disposeStyles()
         }
-      }, 'hang-dsh-plugins: 插件目录、Cordis 入口与 Desktop App 设置')
+      }, 'dsh-desktop-runtime: 插件目录、Cordis 入口与 Desktop App 设置')
     }
 
     return { inject, apply }

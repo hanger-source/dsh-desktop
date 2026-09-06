@@ -66,7 +66,10 @@ function readJsonBody(request) {
       if (body.length > 128 * 1024) request.destroy(new Error('请求体过大'))
     })
     request.on('end', () => {
-      if (!body) return resolve({})
+      if (!body) {
+        resolve({})
+        return
+      }
       try {
         resolve(JSON.parse(body))
       } catch (error) {

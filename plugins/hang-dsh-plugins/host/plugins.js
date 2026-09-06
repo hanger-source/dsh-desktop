@@ -3,45 +3,32 @@
 const Fs = require('node:fs')
 const Os = require('node:os')
 const Path = require('node:path')
-const { run } = require('./process.js')
+const Module = require('node:module')
+const Semver = require('semver')
+const { requestJson, run } = require('./process.js')
 
-const CATALOG = require('../catalog.json')
+const BUNDLED_CATALOG = require('../catalog.json')
 const PROFILE = 'web'
 
-function parseVersion(value) {
-  const match = /^(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?$/.exec(String(value || ''))
-  if (!match) return null
-  return { core: [Number(match[1]), Number(match[2]), Number(match[3])], prerelease: match[4] ? match[4].split('.') : [] }
-}
-
-function compareVersions(left, right) {
-  const a = parseVersion(left)
-  const b = parseVersion(right)
-  if (!a || !b) return 0
-  for (let index = 0; index < 3; index += 1) {
-    if (a.core[index] !== b.core[index]) return a.core[index] - b.core[index]
-  }
-  if (a.prerelease.length === 0 || b.prerelease.length === 0) {
-    return a.prerelease.length === b.prerelease.length ? 0 : (a.prerelease.length === 0 ? 1 : -1)
-  }
-  for (let index = 0; index < Math.max(a.prerelease.length, b.prerelease.length); index += 1) {
-    const av = a.prerelease[index]
-    const bv = b.prerelease[index]
-    if (av === bv) continue
-    if (av === undefined) return -1
-    if (bv === undefined) return 1
-    const an = /^\d+$/.test(av) ? Number(av) : null
-    const bn = /^\d+$/.test(bv) ? Number(bv) : null
-    if (an !== null && bn !== null) return an - bn
-    if (an !== null) return -1
-    if (bn !== null) return 1
-    return av.localeCompare(bv)
-  }
-  return 0
-}
-
 function newest(values) {
-  return values.filter(value => parseVersion(value)).sort(compareVersions).at(-1) || null
+  return Semver.rsort(values.filter(value => Semver.valid(value)))[0] || null
+}
+
+function validateCatalog(value) {
+  if (!value || value.schemaVersion !== 1 || !Array.isArray(value.plugins)) throw new Error('插件目录格式无效')
+  const keys = new Set()
+  const packages = new Set()
+  for (const plugin of value.plugins) {
+    if (!plugin || !/^[a-z0-9-]+$/.test(plugin.key || '') || !/^@hanger-source\/[a-z0-9-]+$/.test(plugin.package || '')) {
+      throw new Error('插件目录包含无效条目')
+    }
+    if (!plugin.name || !plugin.purpose || !plugin.tagPrefix || keys.has(plugin.key) || packages.has(plugin.package)) {
+      throw new Error('插件目录包含重复或不完整条目')
+    }
+    keys.add(plugin.key)
+    packages.add(plugin.package)
+  }
+  return value
 }
 
 class ProfilePluginRepository {
@@ -49,20 +36,18 @@ class ProfilePluginRepository {
     this.dshHome = options.dshHome
     this.dshExecutable = options.dshExecutable
     this.commandEnvironment = options.commandEnvironment
-    this.repository = options.repository || CATALOG.repository
+    this.repository = options.repository || BUNDLED_CATALOG.repository
     this.sourceRoot = options.sourceRoot || null
     this.log = options.log
     this.profileDir = Path.join(this.dshHome, 'profiles', PROFILE)
-    this.statePath = Path.join(this.profileDir, '.hang-dsh-plugins.json')
+    this.statePath = Path.join(this.profileDir, '.dsh-desktop-plugins.json')
+    this.catalogCache = validateCatalog(BUNDLED_CATALOG)
     this.releaseCache = null
-    this.releaseCacheAt = 0
     this.running = null
   }
 
   manifest() {
-    try {
-      return JSON.parse(Fs.readFileSync(Path.join(this.profileDir, 'package.json'), 'utf8'))
-    } catch (_error) {
+    try { return JSON.parse(Fs.readFileSync(Path.join(this.profileDir, 'package.json'), 'utf8')) } catch (_error) {
       return { dependencies: {}, dsh: { profile: { bundles: [] } } }
     }
   }
@@ -71,9 +56,7 @@ class ProfilePluginRepository {
     try {
       const value = JSON.parse(Fs.readFileSync(this.statePath, 'utf8'))
       return value && typeof value === 'object' ? value : { channels: {}, enabled: {} }
-    } catch (_error) {
-      return { channels: {}, enabled: {} }
-    }
+    } catch (_error) { return { channels: {}, enabled: {} } }
   }
 
   writeState(value) {
@@ -83,29 +66,48 @@ class ProfilePluginRepository {
     Fs.renameSync(temporary, this.statePath)
   }
 
-  installedVersion(packageName) {
-    try {
-      const manifestPath = Path.join(this.profileDir, 'node_modules', ...packageName.split('/'), 'package.json')
-      return JSON.parse(Fs.readFileSync(manifestPath, 'utf8')).version || null
-    } catch (_error) {
-      return null
-    }
+  async installedPackages() {
+    const manifest = this.manifest()
+    if (!Object.keys(manifest.dependencies || {}).length) return new Map()
+    const result = await run(this.dshExecutable, ['plugin', '--profile', PROFILE, 'list', '--json', '--depth=0'], {
+      env: this.commandEnvironment, cwd: this.sourceRoot || Os.homedir(), timeoutMs: 30_000, maxBytes: 2 * 1024 * 1024,
+    })
+    if (result.exitCode !== 0) throw new Error((result.stderr || result.stdout || 'dsh plugin list exit ' + result.exitCode).trim())
+    const rows = JSON.parse(result.stdout)
+    const dependencies = rows[0]?.dependencies || {}
+    const requireFromProfile = Module.createRequire(Path.join(this.profileDir, 'package.json'))
+    return new Map(Object.entries(dependencies).map(([packageName, dependency]) => {
+      let version = Semver.valid(dependency.version)
+      const path = Path.dirname(requireFromProfile.resolve(packageName + '/package.json'))
+      version = Semver.valid(JSON.parse(Fs.readFileSync(Path.join(path, 'package.json'), 'utf8')).version) || version
+      return [packageName, { version, path }]
+    }))
   }
 
-  reconcileActivation(state = this.state()) {
+  async catalog(refresh = false) {
+    if (this.sourceRoot) {
+      return validateCatalog(JSON.parse(Fs.readFileSync(Path.join(this.sourceRoot, 'plugins/hang-dsh-plugins/catalog.json'), 'utf8')))
+    }
+    if (!refresh) return this.catalogCache
+    const remote = await requestJson('https://raw.githubusercontent.com/' + this.repository + '/main/plugins/hang-dsh-plugins/catalog.json')
+    this.catalogCache = validateCatalog(remote)
+    return this.catalogCache
+  }
+
+  reconcileActivation(state = this.state(), catalog = this.catalogCache) {
     const manifestPath = Path.join(this.profileDir, 'package.json')
     const manifest = this.manifest()
     manifest.dsh = manifest.dsh || {}
     manifest.dsh.profile = manifest.dsh.profile || {}
     const before = manifest.dsh.profile.bundles || []
+    const packages = new Set(catalog.plugins.map(plugin => plugin.package))
     const bundles = before.filter(packageName => {
-      const plugin = CATALOG.plugins.find(row => row.package === packageName)
-      return !plugin || state.enabled?.[plugin.key] !== false
+      if (!packages.has(packageName)) return true
+      const plugin = catalog.plugins.find(row => row.package === packageName)
+      return state.enabled?.[plugin.key] !== false
     })
-    for (const plugin of CATALOG.plugins) {
-      if (state.enabled?.[plugin.key] === true && !bundles.includes(plugin.package)) {
-        bundles.push(plugin.package)
-      }
+    for (const plugin of catalog.plugins) {
+      if (state.enabled?.[plugin.key] === true && !bundles.includes(plugin.package)) bundles.push(plugin.package)
     }
     if (JSON.stringify(before) === JSON.stringify(bundles)) return { changed: false, bundles }
     manifest.dsh.profile.bundles = bundles
@@ -116,41 +118,24 @@ class ProfilePluginRepository {
     return { changed: true, bundles }
   }
 
-  async releases(force = false) {
+  async releases(catalog, refresh = false) {
     if (this.sourceRoot) {
-      return Object.fromEntries(CATALOG.plugins.map(plugin => {
+      return Object.fromEntries(catalog.plugins.map(plugin => {
         let version = null
-        try {
-          version = JSON.parse(Fs.readFileSync(Path.join(this.sourceRoot, 'plugins', plugin.key, 'package.json'), 'utf8')).version
-        } catch (_error) {}
+        try { version = JSON.parse(Fs.readFileSync(Path.join(this.sourceRoot, 'plugins', plugin.key, 'package.json'), 'utf8')).version } catch (_error) {}
         const channel = version && version.includes('-') ? 'beta' : 'stable'
-        return [plugin.key, {
-          stable: channel === 'stable' ? { version, tag: null } : null,
-          beta: channel === 'beta' ? { version, tag: null } : null,
-        }]
+        return [plugin.key, { stable: channel === 'stable' ? { version, tag: null } : null, beta: channel === 'beta' ? { version, tag: null } : null }]
       }))
     }
-    if (!force && this.releaseCache && Date.now() - this.releaseCacheAt < 5 * 60_000) return this.releaseCache
-    const result = await run('git', [
-      'ls-remote', '--tags', '--refs', 'https://github.com/' + this.repository + '.git',
-    ], {
-      env: this.commandEnvironment,
-      cwd: this.sourceRoot || Os.homedir(),
-      timeoutMs: 30_000,
-      maxBytes: 2 * 1024 * 1024,
+    if (!refresh && this.releaseCache) return this.releaseCache
+    const result = await run('git', ['ls-remote', '--tags', '--refs', 'https://github.com/' + this.repository + '.git'], {
+      env: this.commandEnvironment, cwd: Os.homedir(), timeoutMs: 30_000, maxBytes: 2 * 1024 * 1024,
     })
-    if (result.exitCode !== 0) {
-      throw new Error((result.stderr || result.stdout || 'git ls-remote exit ' + result.exitCode).trim())
-    }
-    const tags = result.stdout.split('\n').map(line => {
-      const marker = '\trefs/tags/'
-      const index = line.indexOf(marker)
-      return index === -1 ? '' : line.slice(index + marker.length)
-    }).filter(Boolean)
-    this.releaseCache = Object.fromEntries(CATALOG.plugins.map(plugin => {
+    if (result.exitCode !== 0) throw new Error((result.stderr || result.stdout || 'git ls-remote exit ' + result.exitCode).trim())
+    const tags = result.stdout.split('\n').map(line => line.split('\trefs/tags/')[1] || '').filter(Boolean)
+    this.releaseCache = Object.fromEntries(catalog.plugins.map(plugin => {
       const matched = tags.filter(tag => tag.startsWith(plugin.tagPrefix))
-        .map(tag => ({ tag, version: tag.slice(plugin.tagPrefix.length) }))
-        .filter(row => parseVersion(row.version))
+        .map(tag => ({ tag, version: tag.slice(plugin.tagPrefix.length) })).filter(row => Semver.valid(row.version))
       const stableVersion = newest(matched.filter(row => !row.version.includes('-')).map(row => row.version))
       const betaVersion = newest(matched.filter(row => row.version.includes('-')).map(row => row.version))
       return [plugin.key, {
@@ -158,34 +143,46 @@ class ProfilePluginRepository {
         beta: betaVersion ? matched.find(row => row.version === betaVersion) : null,
       }]
     }))
-    this.releaseCacheAt = Date.now()
     return this.releaseCache
   }
 
-  async list(checkRemote = false) {
-    const releases = checkRemote ? await this.releases(true) : this.releaseCache
+  async list(refresh = false) {
+    const catalog = await this.catalog(refresh)
+    const releases = refresh ? await this.releases(catalog, true) : this.releaseCache
     const manifest = this.manifest()
     const state = this.state()
+    const installedPackages = await this.installedPackages()
     const dependencies = manifest.dependencies || {}
-    const bundles = new Set(manifest.dsh && manifest.dsh.profile && manifest.dsh.profile.bundles || [])
+    const bundles = new Set(manifest.dsh?.profile?.bundles || [])
     return {
-      plugins: CATALOG.plugins.map(plugin => {
+      plugins: catalog.plugins.map(plugin => {
         const installed = Object.hasOwn(dependencies, plugin.package)
-        const installedVersion = installed ? this.installedVersion(plugin.package) : null
-        const remembered = state.channels && state.channels[plugin.key]
-        const requestedChannel = remembered || (installedVersion && installedVersion.includes('-') ? 'beta' : 'stable')
-        const release = releases?.[plugin.key] || { stable: null, beta: null }
-        const channel = requestedChannel
-        const selected = release[channel]
+        const installedVersion = installedPackages.get(plugin.package)?.version || null
+        const channel = state.channels?.[plugin.key] || (installedVersion?.includes('-') ? 'beta' : 'stable')
+        const available = releases?.[plugin.key] || { stable: null, beta: null }
+        const selected = available[channel]
+        const targets = Object.fromEntries(['stable', 'beta'].map(name => {
+          const release = available[name]
+          return [name, release ? {
+            kind: 'plugin',
+            key: plugin.key,
+            package: plugin.package,
+            version: release.version,
+            channel: name,
+            spec: this.spec(plugin, release),
+          } : null]
+        }))
         return {
           ...plugin,
           installed,
           enabled: installed && bundles.has(plugin.package),
           installedVersion,
           channel,
-          latestVersion: selected && selected.version || null,
-          updateAvailable: Boolean(installedVersion && selected && compareVersions(installedVersion, selected.version) < 0),
-          releases: release,
+          latestVersion: selected?.version || null,
+          updateAvailable: Boolean(installedVersion && selected && Semver.lt(installedVersion, selected.version)),
+          releases: available,
+          target: targets[channel],
+          targets,
         }
       }),
       checkedAt: releases ? new Date().toISOString() : null,
@@ -194,60 +191,41 @@ class ProfilePluginRepository {
 
   spec(plugin, release) {
     if (this.sourceRoot) return 'file:' + Path.join(this.sourceRoot, 'plugins', plugin.key)
-    if (!release || !release.tag) throw new Error('这个频道还没有可安装版本')
+    if (!release?.tag) throw new Error('这个频道还没有可安装版本')
     return 'github:' + this.repository + '#' + release.tag + '&path:/plugins/' + plugin.key
   }
 
   async mutate(key, action, channel) {
     if (this.running) throw new Error('已有插件操作正在进行')
-    const plugin = CATALOG.plugins.find(row => row.key === key)
-    if (!plugin) throw new Error('没有这个插件：' + key)
-    if (!['update', 'enable', 'disable'].includes(action)) throw new Error('无效操作：' + action)
-    if (action !== 'disable' && !['stable', 'beta'].includes(channel)) throw new Error('无效频道：' + channel)
-    this.running = this.performMutation(plugin, action, channel).finally(() => { this.running = null })
+    this.running = this.performMutation(key, action, channel).finally(() => { this.running = null })
     return this.running
   }
 
-  async performMutation(plugin, action, channel) {
+  async performMutation(key, action, channel) {
+    if (!['enable', 'disable'].includes(action)) throw new Error('无效操作：' + action)
+    const catalog = await this.catalog(false)
+    const plugin = catalog.plugins.find(row => row.key === key)
+    if (!plugin) throw new Error('没有这个插件：' + key)
+    if (action === 'enable' && !['stable', 'beta'].includes(channel)) throw new Error('无效频道：' + channel)
     const manifest = this.manifest()
     const installed = Object.hasOwn(manifest.dependencies || {}, plugin.package)
-    const wasEnabled = installed && new Set(manifest.dsh?.profile?.bundles || []).has(plugin.package)
+    const installedVersion = (await this.installedPackages()).get(plugin.package)?.version || null
     const state = this.state()
-
-    if (action === 'disable') {
-      state.enabled = { ...(state.enabled || {}), [plugin.key]: false }
-      this.writeState(state)
-      this.reconcileActivation(state)
-    } else {
-      const release = (await this.releases(true))[plugin.key]?.[channel]
-      const mustInstall = action === 'update' || !installed || state.channels?.[plugin.key] !== channel
-      if (mustInstall) {
-        const result = await run(this.dshExecutable, [
-          'plugin', '--profile', PROFILE, 'add', this.spec(plugin, release), '--save-exact',
-        ], {
-          env: this.commandEnvironment,
-          cwd: this.sourceRoot || Os.homedir(),
-          timeoutMs: 5 * 60_000,
-          maxBytes: 512 * 1024,
-        })
-        if (result.exitCode !== 0) {
-          throw new Error((result.stderr || result.stdout || 'dsh plugin exit ' + result.exitCode).trim())
-        }
-      }
-      state.channels = { ...(state.channels || {}), [plugin.key]: channel }
-      state.enabled = {
-        ...(state.enabled || {}),
-        [plugin.key]: action === 'enable'
-          ? true
-          : (typeof state.enabled?.[plugin.key] === 'boolean' ? state.enabled[plugin.key] : wasEnabled),
-      }
-      this.writeState(state)
-      this.reconcileActivation(state)
+    const currentChannel = state.channels?.[plugin.key] || (installedVersion?.includes('-') ? 'beta' : 'stable')
+    if (action === 'enable' && (!installed || currentChannel !== channel)) {
+      const release = (await this.releases(catalog, true))[plugin.key]?.[channel]
+      const result = await run(this.dshExecutable, ['plugin', '--profile', PROFILE, 'add', this.spec(plugin, release), '--save-exact'], {
+        env: this.commandEnvironment, cwd: this.sourceRoot || Os.homedir(), timeoutMs: 5 * 60_000, maxBytes: 512 * 1024,
+      })
+      if (result.exitCode !== 0) throw new Error((result.stderr || result.stdout || 'dsh plugin exit ' + result.exitCode).trim())
     }
-    this.releaseCache = null
+    state.channels = { ...(state.channels || {}), [plugin.key]: channel }
+    state.enabled = { ...(state.enabled || {}), [plugin.key]: action === 'enable' }
+    this.writeState(state)
+    this.reconcileActivation(state, catalog)
     this.log('[plugins] ' + action + ' ' + plugin.key + ' channel=' + channel)
     return { action, key: plugin.key, channel, requiresRestart: true }
   }
 }
 
-module.exports = { ProfilePluginRepository, compareVersions }
+module.exports = { ProfilePluginRepository, validateCatalog }

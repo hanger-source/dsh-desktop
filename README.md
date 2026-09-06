@@ -1,86 +1,67 @@
 # DSH Desktop
 
-这个仓库同时发布 DSH macOS App 和 Hang 的 DSH 插件，但两者使用不同的版本与更新链路。
+DSH Desktop 是 `@deepseek-ai/dsh` 的 macOS 原生壳，同时提供 App 自有的更新与插件管理界面。
 
-## 更新边界
+## 运行边界
 
-| 对象 | 版本 | 分发 | 生效 |
-|---|---|---|---|
-| DSH.app | `dsh-app-v*` | GitHub Actions 构建 DMG/ZIP Release | App 自动更新后重启 |
-| `hang-dsh-plugins` | `plugin-hang-dsh-plugins-v*` | App 启动前通过 `dsh plugin --profile web add github:...&path:/plugins/hang-dsh-plugins` 确保最低兼容版本；后续由 Desktop App 页面独立更新 | 重载 dsh 服务 |
-| 功能插件 | `plugin-<key>-v*` | 设置 → Hang 的插件，逐个通过正式 DSH Bundle 安装 | 自动重载 dsh 服务 |
-| `@deepseek-ai/dsh` | npm semver | npmjs | 更新完成后重启 App |
+| 对象 | 来源 | 版本与生效方式 |
+|---|---|---|
+| DSH.app | GitHub Release 的 DMG/ZIP | `dsh-app-v*`；安装后重启 App |
+| Desktop 管理运行时 | `apps/dsh/desktop-runtime` | 构建时写入 App 版本并放入 `Contents/Resources/desktop-runtime`；只能随 App 更新 |
+| Hang DSH Plugins | `plugins/hang-dsh-plugins` | `plugin-hang-dsh-plugins-v*`；独立检查、选择和更新 |
+| `@deepseek-ai/dsh` | npmjs | 用户检查后选择更新；与其他所选项目统一重启 |
+| 功能插件 | Git tag 对应的仓库子目录 | 每个插件独立版本、频道、启停和更新 |
 
-App 不携带私有 DSH overlay，不 clone 插件仓库，也不把源码放进 `~/.dsh/dsh-desktop`。用户机器只保留标准 web profile、pnpm 安装结果和运行日志。
+Desktop 管理运行时属于 App，没有独立 Release。Hang DSH Plugins 是独立的宿主管理组件，拥有插件目录、安装和启停 API，不包含页面代码。App 随包携带一个可启动的管理器版本，仅在管理器缺失或仍是旧的页面/宿主混合结构时迁移；已经迁移完成的管理器不会随 App 启动被降级或覆盖。
 
-## 目录
+## 更新模型
 
-```text
-apps/dsh/native/                 # AppKit + WKWebView 原生壳与构建脚本
-plugins/catalog.json             # 功能插件目录
-plugins/hang-dsh-plugins/        # App 自动安装的隐藏管理 Bundle
-plugins/conversation-experience/ # 会话体验 Bundle
-plugins/quota-monitor/           # 订阅/余额 Bundle
-plugins/node-repl/               # Node REPL Bundle 与随包二进制
-.github/workflows/build-dsh-app.yml
-launch-web.sh                    # 本仓库源码的本地 web profile 诊断入口
-```
+打开设置页面只读取本机版本，不访问远端，也不会用加载状态替换整页内容。
 
-每个 `plugins/<key>` 都是可独立安装的 npm package 根目录，提交中已包含运行产物，不需要 Git 安装时执行 `prepare`。
+- “Desktop App”中的“检查更新”检查 App、Hang DSH Plugins 与 dsh。
+- “Hang 的插件”中的“检查更新”刷新远端插件目录与插件版本。
+- 单项有更新时，直接在该项执行更新。
+- 已检查到多个候选时，“选择更新”打开独立弹窗；checkbox 只存在于弹窗中，不改变底层展示卡片。
+- 已检查的 App、dsh 和功能插件可以进入同一个选择弹窗，作为一次事务安装并只重启一次。
 
-## 插件版本与频道
+更新开始前会保存 web profile 和原 dsh 版本；App 更新还保留原 App Bundle。只有新版页面中的 Desktop 管理运行时完成初始化后，事务才确认成功。准备失败、服务启动失败或管理运行时未就绪时，错误页面提供“恢复更新前版本”，统一恢复 App、dsh 与插件状态。
 
-正式版和 Beta 都使用不可变 tag：
+## 插件目录
+
+`plugins/hang-dsh-plugins/catalog.json` 是管理器随包携带的初始目录。“检查更新”时会从仓库默认分支读取同一路径，界面中的插件集合由目录数据生成。目录条目给出 package、用途与 tag 前缀；版本来自不可变 tag：
 
 ```text
 plugin-conversation-experience-v0.2.0
 plugin-conversation-experience-v0.3.0-beta.1
 ```
 
-管理页默认选择正式版；只有尚未发布正式版或用户主动选择时才使用 Beta，并在条目名称旁显示短的 `Beta` 标记。分支仅用于开发验证，不作为用户更新源。
-
-插件安装格式：
+功能插件通过标准 DSH profile 命令安装：
 
 ```bash
 dsh plugin --profile web add \
   'github:hanger-source/dsh-desktop#plugin-conversation-experience-v0.2.0&path:/plugins/conversation-experience'
 ```
 
-开发分支也可以安装，前提是分支已推送：
+## 目录
 
-```bash
-dsh plugin --profile web add \
-  'github:hanger-source/dsh-desktop#heads/feat/example&path:/plugins/conversation-experience'
+```text
+apps/dsh/native/                  # AppKit、启动链、更新事务与恢复
+apps/dsh/desktop-runtime/         # 随 App 分发的设置页与组件状态 API
+plugins/hang-dsh-plugins/         # 独立插件目录、安装和启停 API
+plugins/conversation-experience/ # 独立功能插件
+plugins/quota-monitor/           # 独立功能插件
+plugins/node-repl/                # 独立功能插件
+.github/workflows/                # App 与功能插件发布
+launch-web.sh                     # 隔离 profile 的本地 Web 验收入口
 ```
-
-## App 启动链
-
-1. 检查 Node.js 与 `dsh`；缺少 dsh 时通过 npmjs 安装 `@deepseek-ai/dsh@latest`。
-2. 检查 pnpm；缺少时通过 npm 安装 `pnpm@10`。
-3. 检查 web profile 是否已经安装 App 要求的最低版本 `@hanger-source/hang-dsh-plugins`，缺失或版本过低时通过正式 `dsh plugin` 命令安装。
-4. 直接运行 `dsh --profile web --no-open`，不再生成 overlay。
-5. 管理 Bundle 仅在用户点击检查更新或执行安装时读取 GitHub tags；启用、更新、停用分别落到 web profile 的 package 依赖与 bundle 列表，然后由 App 重载 dsh 服务，不重启 App 进程。
-
-App 退出时仍会终止自己持有的 dsh 子进程；管理 Bundle 也监控 App 父进程，避免留下孤儿服务。
 
 ## 本地验证
 
 ```bash
+npm --prefix apps/dsh/desktop-runtime run check
+npm --prefix plugins/hang-dsh-plugins run check
 DSH_HOME="$(mktemp -d)" bash launch-web.sh --port 3091
+bash apps/dsh/native/dsh-app-build.sh /tmp/DSH.app apps/dsh/native 0.0.0-dev
 ```
 
-`launch-web.sh` 只把本地 `hang-dsh-plugins` 以 `file:` package 装入指定 profile。其余功能插件在“设置 → Hang 的插件”中逐个启用。
-
-## App Release
-
-插件发布使用 Actions → **Release DSH Plugin**：选择插件并输入与其 `package.json` 一致的 semver。CI 会检查会话插件构建产物、执行 `npm pack --dry-run`，然后在当前提交创建 `plugin-<key>-v<version>` 不可变 tag。带 prerelease 的 semver 自动进入 Beta 频道；普通 semver 进入正式频道，不额外上传 tgz 或创建 Release 资产。
-
-App 发布使用 Actions → **Release DSH Desktop**：
-
-- 版本留空：在现有 `dsh-app-v*` Release 上递增 patch；
-- 输入 `0.3.0`：发布 `dsh-app-v0.3.0`；
-- 推送 `dsh-app-v*` tag：构建对应版本。
-
-发布前必须先存在 App 所绑定的 `plugin-hang-dsh-plugins-v*` tag。CI 校验管理器 tag、App binary、Info.plist 版本和 ad-hoc 签名，然后发布 `DSH.dmg`、`DSH.app.zip` 与 `SHA256SUMS.txt`。
-
-普通用户下载 DMG 后拖入 Applications。当前使用 ad-hoc 签名，另一台 Mac 首次打开可能需要在“系统设置 → 隐私与安全性”中允许打开。
+App Release 由 Actions → **Release DSH Desktop** 生成 DMG、ZIP 和 SHA256SUMS；管理器与功能插件由 **Release DSH Plugin** 创建各自的不可变 tag。

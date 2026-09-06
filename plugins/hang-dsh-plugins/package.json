@@ -1,12 +1,17 @@
 {
   "name": "@hanger-source/hang-dsh-plugins",
-  "version": "0.1.4",
-  "description": "Hang 的 DSH 插件目录与安装管理界面",
+  "version": "0.2.0",
+  "description": "Hang 的 DSH 插件目录与安装管理服务",
   "license": "MIT",
+  "dependencies": {
+    "semver": "7.7.2"
+  },
+  "scripts": {
+    "check": "node --check host/index.js && node --check host/plugins.js && node --check host/process.js && node --check host/reconcile.js"
+  },
   "main": "host/index.js",
   "exports": {
     ".": "./host/index.js",
-    "./client": "./client.js",
     "./package.json": "./package.json"
   },
   "files": [
@@ -14,21 +19,12 @@
     "host/plugins.js",
     "host/process.js",
     "host/reconcile.js",
-    "host/versions.js",
-    "client.js",
     "catalog.json",
     "cordis.patch.yml"
   ],
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
-    },
-    "client": {
-      "platform": "web",
-      "inject": [
-        "@deepseek-ai/dsh-client-ui-settings",
-        "@deepseek-ai/dsh-client-ui-sidebar"
-      ]
     }
   }
 }
