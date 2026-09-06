@@ -66,21 +66,19 @@ class ProfilePluginRepository {
     Fs.renameSync(temporary, this.statePath)
   }
 
-  async installedPackages() {
+  installedPackages(catalog = this.catalogCache) {
     const manifest = this.manifest()
-    if (!Object.keys(manifest.dependencies || {}).length) return new Map()
-    const result = await run(this.dshExecutable, ['plugin', '--profile', PROFILE, 'list', '--json', '--depth=0'], {
-      env: this.commandEnvironment, cwd: this.sourceRoot || Os.homedir(), timeoutMs: 30_000, maxBytes: 2 * 1024 * 1024,
-    })
-    if (result.exitCode !== 0) throw new Error((result.stderr || result.stdout || 'dsh plugin list exit ' + result.exitCode).trim())
-    const rows = JSON.parse(result.stdout)
-    const dependencies = rows[0]?.dependencies || {}
+    const dependencies = manifest.dependencies || {}
     const requireFromProfile = Module.createRequire(Path.join(this.profileDir, 'package.json'))
-    return new Map(Object.entries(dependencies).map(([packageName, dependency]) => {
-      let version = Semver.valid(dependency.version)
-      const path = Path.dirname(requireFromProfile.resolve(packageName + '/package.json'))
-      version = Semver.valid(JSON.parse(Fs.readFileSync(Path.join(path, 'package.json'), 'utf8')).version) || version
-      return [packageName, { version, path }]
+    return new Map(catalog.plugins.flatMap(plugin => {
+      if (!Object.hasOwn(dependencies, plugin.package)) return []
+      try {
+        const path = Path.dirname(requireFromProfile.resolve(plugin.package + '/package.json'))
+        const version = Semver.valid(JSON.parse(Fs.readFileSync(Path.join(path, 'package.json'), 'utf8')).version)
+        return [[plugin.package, { version, path, error: null }]]
+      } catch (error) {
+        return [[plugin.package, { version: null, path: null, error: error.message || String(error) }]]
+      }
     }))
   }
 
@@ -151,7 +149,7 @@ class ProfilePluginRepository {
     const releases = refresh ? await this.releases(catalog, true) : this.releaseCache
     const manifest = this.manifest()
     const state = this.state()
-    const installedPackages = await this.installedPackages()
+    const installedPackages = this.installedPackages(catalog)
     const dependencies = manifest.dependencies || {}
     const bundles = new Set(manifest.dsh?.profile?.bundles || [])
     return {
@@ -177,6 +175,7 @@ class ProfilePluginRepository {
           installed,
           enabled: installed && bundles.has(plugin.package),
           installedVersion,
+          installedError: installedPackages.get(plugin.package)?.error || null,
           channel,
           latestVersion: selected?.version || null,
           updateAvailable: Boolean(installedVersion && selected && Semver.lt(installedVersion, selected.version)),
@@ -209,7 +208,7 @@ class ProfilePluginRepository {
     if (action === 'enable' && !['stable', 'beta'].includes(channel)) throw new Error('无效频道：' + channel)
     const manifest = this.manifest()
     const installed = Object.hasOwn(manifest.dependencies || {}, plugin.package)
-    const installedVersion = (await this.installedPackages()).get(plugin.package)?.version || null
+    const installedVersion = this.installedPackages(catalog).get(plugin.package)?.version || null
     const state = this.state()
     const currentChannel = state.channels?.[plugin.key] || (installedVersion?.includes('-') ? 'beta' : 'stable')
     if (action === 'enable' && (!installed || currentChannel !== channel)) {

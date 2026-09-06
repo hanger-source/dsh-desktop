@@ -7,16 +7,22 @@ window.__ModuleLoader__.load({
     const nativeControl = () => window.webkit?.messageHandlers?.dshAppControl
     const snapshotKey = name => 'dsh-desktop-runtime:' + name
     const readSnapshot = name => {
-      try { return JSON.parse(window.sessionStorage.getItem(snapshotKey(name))) }
-      catch (_error) { return null }
+      for (const storage of [window.localStorage, window.sessionStorage]) {
+        try {
+          const value = storage.getItem(snapshotKey(name))
+          if (value) return JSON.parse(value)
+        } catch (_error) {}
+      }
+      return null
     }
     const writeSnapshot = (name, value) => {
-      try { window.sessionStorage.setItem(snapshotKey(name), JSON.stringify(value)) }
+      try { window.localStorage.setItem(snapshotKey(name), JSON.stringify(value)) }
       catch (_error) {}
       return value
     }
     let appStatusSnapshot = readSnapshot('versions')
     let pluginStateSnapshot = readSnapshot('plugins')
+    let pluginStateRequest = null
 
     async function api(path, options = {}) {
       const response = await fetch('/api/dsh-desktop' + path, {
@@ -29,6 +35,19 @@ window.__ModuleLoader__.load({
         throw new Error((result && result.error) || ('HTTP ' + response.status))
       }
       return result.value
+    }
+
+    function requestPluginState(checkUpdates = false) {
+      if (!checkUpdates && pluginStateRequest) return pluginStateRequest
+      const request = api('/plugins' + (checkUpdates ? '?force=1' : '')).then(value => {
+        pluginStateSnapshot = writeSnapshot('plugins', value)
+        return value
+      })
+      pluginStateRequest = request
+      request.catch(() => {
+        if (pluginStateRequest === request) pluginStateRequest = null
+      })
+      return request
     }
 
     function installStyles() {
@@ -433,36 +452,49 @@ window.__ModuleLoader__.load({
     }
     function PluginSection() {
       const [state, setState] = React.useState({
-        loading: !pluginStateSnapshot,
         value: pluginStateSnapshot,
         error: null,
       })
+      const [checking, setChecking] = React.useState(false)
       const [busy, setBusy] = React.useState(null)
       const [channels, setChannels] = React.useState({})
       const [message, setMessage] = React.useState(null)
       const [pickerOpen, setPickerOpen] = React.useState(false)
 
-      const load = React.useCallback(async (refresh = false) => {
-        setState(previous => ({ ...previous, loading: true, error: null }))
+      const accept = React.useCallback(value => {
+        setState({ value, error: null })
+        setChannels(current => Object.fromEntries(value.plugins.map(plugin => [
+          plugin.key,
+          current[plugin.key] || plugin.channel,
+        ])))
+      }, [])
+
+      const loadLocal = React.useCallback(async () => {
         try {
-          const value = await api('/plugins' + (refresh ? '?force=1' : ''))
-          pluginStateSnapshot = writeSnapshot('plugins', value)
-          setState({ loading: false, value, error: null })
-          setChannels(current => Object.fromEntries(value.plugins.map(plugin => [
-            plugin.key,
-            current[plugin.key] || plugin.channel,
-          ])))
-          if (refresh) {
-            const count = value.plugins.filter(plugin => plugin.installed && plugin.updateAvailable).length
-            setMessage({ kind: 'ok', text: count ? `检查完成，当前有 ${count} 个插件可以更新。` : '检查完成，当前没有插件更新。' })
-          }
+          accept(await requestPluginState(false))
         } catch (error) {
           const text = error.message || String(error)
-          setState(previous => ({ loading: false, value: previous.value, error: text }))
-          if (refresh) setMessage({ kind: 'error', text: '检查更新失败：' + text })
+          setState(previous => ({ value: previous.value, error: text }))
         }
-      }, [])
-      React.useEffect(() => { load(false) }, [load])
+      }, [accept])
+      React.useEffect(() => { loadLocal() }, [loadLocal])
+
+      const checkUpdates = async () => {
+        setChecking(true)
+        setMessage(null)
+        try {
+          const value = await requestPluginState(true)
+          accept(value)
+          const count = value.plugins.filter(plugin => plugin.installed && plugin.updateAvailable).length
+          setMessage({ kind: 'ok', text: count ? `检查完成，当前有 ${count} 个插件可以更新。` : '检查完成，当前没有插件更新。' })
+        } catch (error) {
+          const text = error.message || String(error)
+          setState(previous => ({ value: previous.value, error: text }))
+          setMessage({ kind: 'error', text: '检查更新失败：' + text })
+        } finally {
+          setChecking(false)
+        }
+      }
 
       React.useEffect(() => {
         const receiveUpdate = event => {
@@ -490,7 +522,8 @@ window.__ModuleLoader__.load({
             setMessage({ kind: 'ok', text: '插件状态已保存，正在重新加载…' })
             bridge.postMessage({ action: 'reloadService' })
           } else {
-            await load(false)
+            pluginStateRequest = null
+            await loadLocal()
             setBusy(null)
           }
         } catch (error) {
@@ -520,12 +553,12 @@ window.__ModuleLoader__.load({
           h('span', { className: 'dsh-desktop-muted dsh-desktop-grow' }, '插件独立选择版本和启停；检查后可单独更新，也可与其他组件一起更新。'),
           h('button', {
             className: 'dsh-desktop-btn',
-            disabled: busy !== null || state.loading,
-            onClick: () => load(true),
-          }, state.loading ? '检查中…' : '检查更新'),
+            disabled: busy !== null || checking,
+            onClick: checkUpdates,
+          }, checking ? '检查中…' : '检查更新'),
           candidates.length > 0 ? h('button', {
             className: 'dsh-desktop-btn dsh-desktop-btn-primary',
-            disabled: busy !== null || state.loading,
+            disabled: busy !== null || checking,
             onClick: () => setPickerOpen(true),
           }, '选择更新') : null,
         ]),
@@ -591,6 +624,7 @@ window.__ModuleLoader__.load({
     }
     function apply(ctx) {
       ctx.effect(() => {
+        requestPluginState(false).catch(() => {})
         const disposeStyles = installStyles()
         const disposeIcons = installSettingsNavIcons()
         const slots = ctx.get('slots')

@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/hang-dsh-plugins",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Hang 的 DSH 插件目录与安装管理服务",
   "license": "MIT",
   "dependencies": {
