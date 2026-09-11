@@ -154,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
 
     private func buildWindow() {
         let rect = NSRect(x: 0, y: 0, width: 1280, height: 820)
-        window = DSHWindow(
+        window = NSWindow(
             contentRect: rect,
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -164,11 +164,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
+        window.isMovableByWindowBackground = true
         window.setFrameAutosaveName("DSHMainWindow")
         applyStartupThemePreference()
 
         let titlebarHeight = max(0, window.frame.height - window.contentLayoutRect.height)
-        (window as? DSHWindow)?.dragRegionHeight = titlebarHeight
         let titlebarCSSHeight = String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), titlebarHeight)
 
         let config = WKWebViewConfiguration()
@@ -242,15 +242,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         updateCoordinator.attach(to: webView)
         startupPage = StartupPageController(webView: webView)
         content.addSubview(webView)
-        let dragView = TitlebarDragView(frame: NSRect(
-            x: 0,
-            y: content.bounds.height - titlebarHeight,
-            width: content.bounds.width,
-            height: titlebarHeight
-        ))
-        dragView.autoresizingMask = [.width, .minYMargin]
-        dragView.setAccessibilityElement(false)
-        content.addSubview(dragView)
         window.contentView = content
         window.center()
     }
