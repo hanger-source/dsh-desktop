@@ -1,7 +1,7 @@
 {
   "name": "@hanger-source/dsh-conversation-experience",
-  "version": "0.1.2",
-  "description": "DSH 会话工具展示、思考滚动与排队消息体验",
+  "version": "0.2.0",
+  "description": "DSH 长思考内容滚动体验",
   "license": "MIT",
   "scripts": {
     "build": "node build-client.mjs",

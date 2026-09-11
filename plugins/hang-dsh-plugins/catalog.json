@@ -6,7 +6,7 @@
       "key": "conversation-experience",
       "package": "@hanger-source/dsh-conversation-experience",
       "name": "会话体验",
-      "purpose": "优化终端工具展示和排队消息的多行编辑体验",
+      "purpose": "优化长思考内容的滚动和生成跟随体验",
       "tagPrefix": "plugin-conversation-experience-v"
     },
     {

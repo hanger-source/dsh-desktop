@@ -99,21 +99,16 @@ window.__ModuleLoader__.load({
         '.dsh-update-dialog-option input{margin:3px 0 0;width:15px;height:15px}',
         '.dsh-update-dialog-name{display:block;font-weight:600;color:var(--dsw-alias-label-primary)}',
         '.dsh-update-dialog-actions{display:flex;justify-content:flex-end;gap:10px}',
-        '.hHd-Xa_root:not(.hHd-Xa_collapsed){padding-bottom:4px!important}',
-        '.hHd-Xa_footArea{display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;align-items:center!important;column-gap:8px!important}',
-        '.hHd-Xa_footerActions{display:contents!important}',
-        '.hHd-Xa_settingsArea{grid-column:2!important;grid-row:2!important;width:100%!important;margin:0!important;padding:0!important}',
-        '.hHd-Xa_settingsArea>*{width:100%!important;margin:0!important}',
-        '.hHd-Xa_settingsArea .VOzbGW_trigger{justify-content:flex-end!important}',
-        '.hHd-Xa_collapsed .hHd-Xa_footArea{display:flex!important;justify-content:center!important;align-items:center!important}',
-        '.hHd-Xa_collapsed .hHd-Xa_settingsArea{display:flex!important;align-items:center!important;justify-content:center!important}',
-        '.hHd-Xa_collapsed .hHd-Xa_settingsArea .VOzbGW_trigger{width:36px!important;justify-content:center!important}',
-        '.mq-root{grid-column:1/-1!important;grid-row:1!important}',
-        '.Nqubda_layer{grid-column:1!important;grid-row:2!important;width:auto!important;margin:0!important}',
-        '.Nqubda_badgeLabel{display:none!important}',
-        '.dsh-cordis-empty{grid-column:1;grid-row:2;position:relative;min-width:0}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]{display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;align-items:center!important;column-gap:8px!important;padding-bottom:4px!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-actions{display:contents!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings{grid-column:2!important;grid-row:2!important;width:100%!important;margin:0!important;padding:0!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings>*{width:100%!important;margin:0!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings [data-slot="sidebar.settings"] button{justify-content:flex-end!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"] .mq-root{grid-column:1/-1!important;grid-row:1!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"] .dsh-cordis-empty{grid-column:1!important;grid-row:2!important}',
+        '.dsh-cordis-empty{position:relative;min-width:0}',
         '.dsh-cordis-empty-button{appearance:none;display:inline-flex;align-items:center;gap:8px;height:42px;padding:0 8px;border:0;border-radius:10px;background:transparent;color:var(--dsw-alias-label-secondary);font:12px/16px inherit;cursor:pointer}',
-        '.hHd-Xa_collapsed .dsh-cordis-empty-button{width:36px;height:36px;padding:0;justify-content:center;border-radius:50%}',
+        '.dsh-cordis-empty[data-dsh-wide="false"] .dsh-cordis-empty-button{width:36px;height:36px;padding:0;justify-content:center;border-radius:50%}',
         '.dsh-cordis-empty-button:hover,.dsh-cordis-empty-button[data-active]{background:var(--dsw-alias-interactive-bg-hover)}',
         '.dsh-cordis-empty-popover{position:absolute;left:0;bottom:44px;z-index:30;width:240px;padding:14px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1);box-shadow:0 12px 32px rgb(0 0 0 / 14%)}',
         '.dsh-cordis-empty-title{font-size:13px;font-weight:650;color:var(--dsw-alias-label-primary)}',
@@ -130,6 +125,7 @@ window.__ModuleLoader__.load({
       const [nativePresent, setNativePresent] = React.useState(() => Boolean(document.querySelector('[data-cordis-badge]')))
       const [open, setOpen] = React.useState(false)
       const [railPopoverStyle, setRailPopoverStyle] = React.useState(null)
+      const rootRef = React.useRef(null)
       const buttonRef = React.useRef(null)
       const wide = !props || props.wide !== false
       const placeRailPopover = React.useCallback(() => {
@@ -155,8 +151,29 @@ window.__ModuleLoader__.load({
         return () => window.removeEventListener('resize', placeRailPopover)
       }, [open, wide, placeRailPopover])
 
-      if (nativePresent) return null
-      return h('div', { className: 'dsh-cordis-empty' }, [
+      React.useEffect(() => {
+        if (!wide) return
+        const actionSlot = rootRef.current && rootRef.current.closest('[data-slot="sidebar.footer.action"]')
+        const actions = actionSlot && actionSlot.parentElement
+        const foot = actions && actions.parentElement
+        const sidebar = foot && foot.parentElement
+        const settings = foot && Array.from(foot.children).find(child => child.querySelector(':scope > [data-slot="sidebar.settings"]'))
+        if (!actions || !foot || !sidebar || !settings) return
+        actions.classList.add('dsh-desktop-sidebar-actions')
+        settings.classList.add('dsh-desktop-sidebar-settings')
+        foot.classList.add('dsh-desktop-sidebar-foot')
+        sidebar.classList.add('dsh-desktop-sidebar-root')
+        foot.setAttribute('data-dsh-wide', String(wide))
+        return () => {
+          actions.classList.remove('dsh-desktop-sidebar-actions')
+          settings.classList.remove('dsh-desktop-sidebar-settings')
+          foot.classList.remove('dsh-desktop-sidebar-foot')
+          sidebar.classList.remove('dsh-desktop-sidebar-root')
+          foot.removeAttribute('data-dsh-wide')
+        }
+      }, [wide])
+
+      return h('div', { ref: rootRef, className: 'dsh-cordis-empty', 'data-dsh-wide': String(wide), hidden: nativePresent || undefined }, nativePresent ? null : [
         h('button', {
           key: 'button',
           ref: buttonRef,

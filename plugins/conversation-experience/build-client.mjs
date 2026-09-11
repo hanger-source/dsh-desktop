@@ -3,7 +3,7 @@ import Path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = Path.dirname(fileURLToPath(import.meta.url))
-const sources = ['queue.js', 'reasoning.js', 'terminal.js']
+const sources = ['reasoning.js']
 const parts = sources.map((name, index) => {
   const source = Fs.readFileSync(Path.join(root, 'client', name), 'utf8').trim()
   return `const __dshClientPart${index} = (() => {\n${source}\n\n})()`
