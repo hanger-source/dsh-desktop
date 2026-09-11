@@ -5,9 +5,20 @@ import WebKit
 final class TitlebarDragController: NSObject, WKScriptMessageHandler {
     private static let webTitlebarHeight: CGFloat = 64
     private weak var window: NSWindow?
+    private var mouseEventMonitor: Any?
+    private var pendingMouseDown: NSEvent?
 
     func attach(to window: NSWindow, configuration: WKWebViewConfiguration, height: CGFloat) {
         self.window = window
+        mouseEventMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp]) { [weak self] event in
+            guard let self else { return event }
+            if event.type == .leftMouseDown, event.window === self.window {
+                self.pendingMouseDown = event
+            } else if event.type == .leftMouseUp {
+                self.pendingMouseDown = nil
+            }
+            return event
+        }
         configuration.userContentController.add(self, name: "dshTitlebarDrag")
 
         let dragHeight = max(height, Self.webTitlebarHeight)
@@ -85,14 +96,18 @@ final class TitlebarDragController: NSObject, WKScriptMessageHandler {
     }
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        let currentEvent = NSApp.currentEvent
+        let event = currentEvent?.type == .leftMouseDown ? currentEvent : pendingMouseDown
         guard message.name == "dshTitlebarDrag",
               let window,
-              let event = NSApp.currentEvent,
+              let event,
               event.type == .leftMouseDown,
-              event.window === window else {
+              event.window === window,
+              ProcessInfo.processInfo.systemUptime - event.timestamp < 1 else {
             appendLog("ignored because the originating mouseDown event is unavailable")
             return
         }
+        pendingMouseDown = nil
 
         let clickCount = (message.body as? [String: Any])?["clickCount"] as? Int ?? event.clickCount
         appendLog("mouseDown x=\(Int(event.locationInWindow.x)) y=\(Int(event.locationInWindow.y)) clicks=\(clickCount)")
@@ -100,6 +115,12 @@ final class TitlebarDragController: NSObject, WKScriptMessageHandler {
             window.performZoom(nil)
         } else {
             window.performDrag(with: event)
+        }
+    }
+
+    deinit {
+        if let mouseEventMonitor {
+            NSEvent.removeMonitor(mouseEventMonitor)
         }
     }
 
