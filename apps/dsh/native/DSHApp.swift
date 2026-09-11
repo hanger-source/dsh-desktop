@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
     private var appliedPageTheme: String?
     private var currentLaunch: RuntimeLaunch?
     private let updateCoordinator = UpdateCoordinator()
+    private let titlebarDragController = TitlebarDragController()
     private lazy var webNavigationController = WebNavigationController(
         onFinish: { [weak self] webView in
             webView.evaluateJavaScript("window.dshReportAppearance && window.dshReportAppearance()")
@@ -164,7 +165,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.titlebarSeparatorStyle = .none
-        window.isMovableByWindowBackground = true
         window.setFrameAutosaveName("DSHMainWindow")
         applyStartupThemePreference()
 
@@ -174,6 +174,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, WKScriptMessageHandler
         let config = WKWebViewConfiguration()
         config.userContentController.add(self, name: "dshAppearance")
         config.userContentController.add(self, name: "dshAppControl")
+        titlebarDragController.attach(to: window, configuration: config, height: titlebarHeight)
         let themeScript = WKUserScript(
             source: """
             (() => {
