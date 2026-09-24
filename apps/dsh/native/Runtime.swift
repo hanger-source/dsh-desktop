@@ -872,7 +872,7 @@ final class ServerManager {
     }
 
     private func poll(completion: @escaping (StartupResult) -> Void) {
-        if process?.isRunning == false {
+        guard let child = process, child.isRunning else {
             completion(.failure("dsh web 已退出。\n\n" + serverLogTail()))
             return
         }

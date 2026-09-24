@@ -26,6 +26,27 @@ struct UpdateCheckpointTest {
             pnpm: "/usr/bin/false"
         )
 
+        let startupFinished = DispatchSemaphore(value: 0)
+        var startupResult: StartupResult?
+        ServerManager.shared.start(launch: launch) { result in
+            startupResult = result
+            startupFinished.signal()
+        }
+        let startupDeadline = Date(timeIntervalSinceNow: 5)
+        while startupFinished.wait(timeout: .now() + 0.05) == .timedOut,
+              Date() < startupDeadline {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+        }
+        switch startupResult {
+        case .failure(let message) where message.contains("dsh web 已退出"): break
+        case .failure(let message):
+            throw NSError(domain: "test", code: 11, userInfo: [NSLocalizedDescriptionKey: "子进程退出被报告成其他失败：\(message)"])
+        case .ready(let url):
+            throw NSError(domain: "test", code: 12, userInfo: [NSLocalizedDescriptionKey: "已经退出的子进程被报告为就绪：\(url)"])
+        case nil:
+            throw NSError(domain: "test", code: 13, userInfo: [NSLocalizedDescriptionKey: "子进程退出后启动回调没有结束"])
+        }
+
         let target = try UpdateTarget(command: [
             "kind": "plugin",
             "key": "conversation-experience",
