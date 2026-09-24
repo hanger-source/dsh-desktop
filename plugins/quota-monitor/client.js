@@ -12,7 +12,7 @@ window.__ModuleLoader__.load({
       },
     }
     const plugin = {
-  inject: ['slots', 'timer', 'sessions', 'modelDirectories'],
+  inject: ['slots', 'timer', 'uiSession', 'modelDirectories'],
   apply(ctx) {
     // 这里只负责用量内容；侧边栏 footer 的整体布局由 Hang 的插件统一管理。
     styles.insert('\n' +
@@ -81,9 +81,10 @@ window.__ModuleLoader__.load({
     }
 
     function useCurrentModel() {
+      const main = ctx.uiSession.adapter.current
       const sessionId = React.useSyncExternalStore(
-        listener => ctx.sessions.list.subscribe(listener),
-        () => ctx.sessions.list.getSnapshot().current,
+        listener => main.subscribe(listener),
+        () => main.getSnapshot().key,
       )
       const directory = React.useMemo(
         () => sessionId === undefined ? null : ctx.modelDirectories.directoryFor(sessionId),
@@ -102,10 +103,12 @@ window.__ModuleLoader__.load({
       const [error, setError] = React.useState(null)
       const snapshots = React.useRef(new Map())
       const provider = currentModel && currentModel.provider
+      const model = currentModel && currentModel.model
 
       React.useEffect(() => {
         let active = true
         if (!provider) {
+          setSnap(null)
           setError(null)
           return () => { active = false }
         }
@@ -113,7 +116,7 @@ window.__ModuleLoader__.load({
         else setSnap(null)
         const load = async (allowStale) => {
           try {
-            const data = await quotaSnapshot(currentModel, allowStale)
+            const data = await quotaSnapshot({ provider, model }, allowStale)
             if (active) {
               if (provider) snapshots.current.set(provider, data)
               setSnap(data)
@@ -129,7 +132,7 @@ window.__ModuleLoader__.load({
           active = false
           stopRefresh()
         }
-      }, [provider])
+      }, [provider, model])
 
       if (!wide || (!provider && !snap)) return null
 

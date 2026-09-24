@@ -78,7 +78,7 @@ module.exports = {
 
     function credentialRef(provider, source) {
       if (!settings) return null
-      const section = settings.get(source.settingsNs)
+      const section = settings.describe().find(entry => entry.ns === source.settingsNs)?.value
       const profile = source.settingsNs === 'llm-pi-ai'
         ? section && section.providers && section.providers[provider]
         : section
@@ -137,7 +137,7 @@ module.exports = {
     }
 
     ctx.on('credentials/reference-updated', () => { cache.clear() })
-    ctx.on('settings/updated', ns => {
+    ctx.on('settings/document-updated', ns => {
       if (ns === 'llm-pi-ai' || ns === 'llm-deepseek') cache.clear()
     })
 
