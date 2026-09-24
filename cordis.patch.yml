@@ -1,0 +1,8 @@
+# One official Desktop bundle, independently maintained feature rows.
+- insert:
+    - id: hanger-conversation-experience
+      name: './plugins/conversation-experience/index.js'
+    - id: hanger-quota-monitor
+      name: './plugins/quota-monitor/index.js'
+    - id: hanger-node-repl
+      name: './plugins/node-repl/index.js'

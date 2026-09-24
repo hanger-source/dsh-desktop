@@ -1,0 +1,72 @@
+name: Release Hang DSH Plugins
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Semver, for example 0.3.0 or 0.4.0-beta.1
+        required: true
+        type: string
+  push:
+    tags:
+      - 'hang-dsh-plugins-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Resolve release version
+        id: release
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT_NAME" = push ]; then
+            tag="$REF_NAME"
+            version="${tag#hang-dsh-plugins-v}"
+          else
+            version="${INPUT_VERSION#v}"
+            tag="hang-dsh-plugins-v$version"
+          fi
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "invalid semver: $version" >&2; exit 1; }
+          [ "$(jq -r .version package.json)" = "$version" ] || { echo "package.json version does not match $version" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+      - name: Install current official DSH
+        run: npm install --global @deepseek-ai/dsh@next --ignore-scripts --no-audit --no-fund
+      - name: Verify release package
+        run: |
+          npm run check
+          npm run verify:official
+          mkdir -p dist
+          npm pack --pack-destination dist
+          (cd dist && shasum -a 256 *.tgz > SHA256SUMS.txt && shasum -a 256 -c SHA256SUMS.txt)
+      - name: Create immutable tag
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          gh release create "$TAG" dist/*.tgz dist/SHA256SUMS.txt \
+            --generate-notes \
+            --title "Hang DSH Plugins $VERSION"

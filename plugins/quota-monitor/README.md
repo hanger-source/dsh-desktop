@@ -20,6 +20,6 @@
 
 ## 安装
 
-`dsh plugin --profile web add 'github:hanger-source/dsh-desktop#<tag>&path:/plugins/quota-monitor'`
+由仓库根目录的 **Hang DSH Plugins** 总 bundle 统一安装和装配，不面向用户单独安装。
 
 Host 通过自己的 `/api/hanger/quota` 路由向 Client 返回 JSON，不依赖动态插件的 `harness.handle/host.call` 通道。

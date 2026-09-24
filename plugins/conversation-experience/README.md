@@ -9,4 +9,4 @@
 
 本插件覆盖的是一整套会话交互，不是单独给思考正文加框。发布前把 `client/*.js` 组合进预构建的 `client.js`；正式安装后 Cordis 中仍然只有一个「会话体验」Bundle。
 
-安装：`dsh plugin --profile web add 'github:hanger-source/dsh-desktop#<tag>&path:/plugins/conversation-experience'`。
+由仓库根目录的 **Hang DSH Plugins** 总 bundle 统一安装和装配，不面向用户单独安装。

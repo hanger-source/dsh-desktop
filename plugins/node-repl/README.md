@@ -12,4 +12,4 @@ MCP 返回图片时，插件通过 Cordis 的 `attachments` capability 将原始
 
 当前 binary 仅支持 macOS arm64。来源版本、签名身份和 SHA-256 见 `vendor/darwin-arm64/manifest.json`。
 
-安装：`dsh plugin --profile web add 'github:hanger-source/dsh-desktop#<tag>&path:/plugins/node-repl'`。
+由仓库根目录的 **Hang DSH Plugins** 总 bundle 统一安装和装配，不面向用户单独安装。

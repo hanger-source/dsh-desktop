@@ -1,0 +1,26 @@
+name: Verify Hang DSH Plugins
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install current official DSH
+        run: npm install --global @deepseek-ai/dsh@next --ignore-scripts --no-audit --no-fund
+      - name: Check source packages
+        run: npm run check
+      - name: Verify official bundle installation
+        run: npm run verify:official
