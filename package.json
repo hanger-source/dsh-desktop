@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/hang-dsh-plugins",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Hang maintained plugins for the official DeepSeek Harness desktop app",
   "license": "MIT",
   "private": false,
@@ -12,6 +12,11 @@
   "bugs": {
     "url": "https://github.com/hanger-source/hang-dsh-plugins/issues"
   },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org",
+    "provenance": true
+  },
   "files": [
     "cordis.patch.yml",
     "plugins/conversation-experience",
@@ -20,7 +25,7 @@
   ],
   "scripts": {
     "check": "node scripts/check-package.mjs && npm --prefix plugins/conversation-experience run check && node --check plugins/quota-monitor/index.js && node --check plugins/quota-monitor/client.js && node --check plugins/node-repl/index.js && node --check plugins/node-repl/mcp-client.js && node --check plugins/node-repl/result-adapter.js && node --check plugins/node-repl/tool-specs.js",
-    "verify:official": "bash scripts/verify-official-install.sh"
+    "verify:official": "node scripts/verify-official-install.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/dsh": ">=0.1.7-rc.1 <0.2.0"

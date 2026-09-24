@@ -4,18 +4,24 @@
 
 ## 安装
 
-在官方 DeepSeek Harness 中打开 **插件 → 添加插件**，粘贴：
+在官方 DeepSeek Harness 中打开 **插件 → 添加插件**，粘贴 npm 包名：
+
+```text
+@hanger-source/hang-dsh-plugins
+```
+
+安装完成后选择 **立即启用**。用户只安装这一个包；总 bundle 会装配仓库内全部 Hang 插件。npm 安装不经过 GitHub `codeload`，Windows 与 macOS 使用同一条安装链路。
+
+需要固定版本时附加版本号：
+
+```text
+@hanger-source/hang-dsh-plugins@0.3.1
+```
+
+需要直接跟随 Git 提交时，也可以使用仓库地址：
 
 ```text
 https://github.com/hanger-source/hang-dsh-plugins
-```
-
-安装完成后选择 **立即启用**。用户只安装这一个仓库；总 bundle 会装配仓库内全部 Hang 插件。
-
-需要固定版本时使用 Release tag：
-
-```text
-https://github.com/hanger-source/hang-dsh-plugins.git#hang-dsh-plugins-v0.3.0
 ```
 
 ## 组成
@@ -39,8 +45,8 @@ plugins/conversation-experience/     # 独立功能组件
 plugins/quota-monitor/               # 独立功能组件
 plugins/node-repl/                    # 独立功能组件
 scripts/                              # 包结构与官方 DSH 安装验证
-.github/workflows/verify.yml          # 跟随 @deepseek-ai/dsh@next 验证
-.github/workflows/release.yml         # 发布总 bundle tag 与 tgz
+.github/workflows/verify.yml          # 在 macOS 和 Windows 跟随 @deepseek-ai/dsh@next 验证
+.github/workflows/release.yml         # 发布 npm 总 bundle、验证并创建 Release
 ```
 
 本仓库不拥有官方 Desktop 的启动链、签名、更新器或 profile 生命周期，也不直接修改 `/Applications/DeepSeek Harness.app`。
@@ -54,7 +60,7 @@ npm run check
 npm run verify:official
 ```
 
-`verify:official` 会打出真实 npm 包、在临时 `DSH_HOME` 中从官方 web profile 创建验证 profile、通过 `dsh plugin` 安装总 bundle，并确认三个组件都进入最终组合配置。验证目录会保留并打印路径，便于继续检查现场。
+`verify:official` 会打出真实 npm 包、在临时 `DSH_HOME` 中从官方 web profile 创建验证 profile、通过 `dsh plugin` 安装总 bundle，并启动真实 Host，确认三个组件进入最终组合配置且两个 Client 包进入页面运行图。验证脚本使用 Node.js，可在 macOS 和 Windows 执行；验证目录会保留并打印路径，便于继续检查现场。
 
 ## 发布
 
@@ -63,6 +69,8 @@ npm run verify:official
 1. 安装当前 `@deepseek-ai/dsh@next`；
 2. 运行源码检查和真实 profile 安装验证；
 3. 生成总 bundle tgz 与 SHA-256；
-4. 创建 GitHub Release。
+4. 发布 `@hanger-source/hang-dsh-plugins` 到 npm 官方 registry；
+5. 在 macOS 和 Windows 中通过官方插件管理器安装已发布版本；
+6. 两个平台都验证通过后创建 Git tag 和 GitHub Release。
 
 子目录版本用于组件诊断，不再各自创建 Release 或要求用户分别选择版本频道。
