@@ -4,8 +4,9 @@ import { fileURLToPath } from 'node:url'
 
 const root = Path.dirname(fileURLToPath(import.meta.url))
 const sources = ['presentation.js', 'queue.js', 'reasoning.js', 'terminal.js']
+const normalizeNewlines = (text) => text.replaceAll('\r\n', '\n')
 const parts = sources.map((name, index) => {
-  const source = Fs.readFileSync(Path.join(root, 'client', name), 'utf8').trim()
+  const source = normalizeNewlines(Fs.readFileSync(Path.join(root, 'client', name), 'utf8')).trim()
   return `const __dshClientPart${index} = (() => {\n${source}\n\n})()`
 })
 const names = sources.map((_name, index) => `__dshClientPart${index}`)
@@ -57,7 +58,7 @@ return {
 
 const target = Path.join(root, 'client.js')
 if (process.argv.includes('--check')) {
-  if (Fs.readFileSync(target, 'utf8') !== output) {
+  if (normalizeNewlines(Fs.readFileSync(target, 'utf8')) !== output) {
     console.error('client.js is not generated from client/*.js')
     process.exitCode = 1
   }
