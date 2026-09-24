@@ -3,12 +3,29 @@
 return {
   apply(ctx) {
     styles.insert(`
-      [data-variant="think"] [data-disclosure-row]+div{box-sizing:border-box;max-height:260px;margin:4px 0 4px 4px;padding:12px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-markdown-code-block);overflow-y:auto}
     `)
 
     ctx.effect(() => {
       const bindings = new Map()
       const atBottom = body => body.scrollHeight - body.scrollTop - body.clientHeight <= 2
+
+      const decorateBody = body => {
+        const originalStyle = body.getAttribute('style')
+        body.style.setProperty('box-sizing', 'border-box')
+        body.style.setProperty('max-height', '260px')
+        body.style.setProperty('margin', '4px 0 4px 4px')
+        body.style.setProperty('padding', '12px 16px')
+        body.style.setProperty('border', '.5px solid var(--dsw-alias-border-l1)')
+        body.style.setProperty('border-radius', '12px')
+        body.style.setProperty('background', 'var(--dsw-alias-markdown-code-block)')
+        body.style.setProperty('overflow', 'hidden auto')
+        return originalStyle
+      }
+
+      const restoreBody = binding => {
+        if (binding.originalStyle === null) binding.body.removeAttribute('style')
+        else binding.body.setAttribute('style', binding.originalStyle)
+      }
 
       const follow = binding => {
         if (!binding.following || binding.root.getAttribute('data-state') !== 'running') return
@@ -34,7 +51,7 @@ return {
 
           let binding = bindings.get(body)
           if (!binding) {
-            binding = { root, body, following: true, lastScrollTop: body.scrollTop, scroll: null }
+            binding = { root, body, following: true, lastScrollTop: body.scrollTop, scroll: null, originalStyle: decorateBody(body) }
             binding.scroll = () => {
               const nextScrollTop = body.scrollTop
               if (atBottom(body)) binding.following = true
@@ -50,6 +67,7 @@ return {
         for (const [body, binding] of bindings) {
           if (active.has(body) && body.isConnected) continue
           body.removeEventListener('scroll', binding.scroll)
+          restoreBody(binding)
           bindings.delete(body)
         }
       }
@@ -60,7 +78,10 @@ return {
 
       return () => {
         observer.disconnect()
-        for (const [body, binding] of bindings) body.removeEventListener('scroll', binding.scroll)
+        for (const [body, binding] of bindings) {
+          body.removeEventListener('scroll', binding.scroll)
+          restoreBody(binding)
+        }
         bindings.clear()
       }
     })
