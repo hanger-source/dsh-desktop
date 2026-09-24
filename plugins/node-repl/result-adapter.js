@@ -44,7 +44,11 @@ export function createResultAdapter(ctx, options) {
     // Dynamic host code runs in a VM realm. Managed subprocess stdout yields
     // host-realm Buffer chunks accepted by the attachment image decoder.
     const decoder = ctx.subprocess.spawn({
-      argv: [options.base64Executable, '-D'],
+      argv: [
+        options.node,
+        '-e',
+        'let data="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>data+=chunk);process.stdin.on("end",()=>process.stdout.write(Buffer.from(data,"base64")))',
+      ],
       cwd: options.dshHome,
       env: {},
       stdio: { stdin: { data }, stdout: 'pipe', stderr: 'inherit' },

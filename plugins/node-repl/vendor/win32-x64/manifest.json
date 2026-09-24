@@ -1,0 +1,15 @@
+{
+  "source": "https://apps.microsoft.com/detail/9PLM9XGG6VKS",
+  "sourcePath": "app/resources/cua_node/bin/node_repl.exe",
+  "packageFamily": "OpenAI.Codex_2p2nqsd0c76g0",
+  "packageVersion": "26.917.9434.0",
+  "packageSha256": "9892383820c5505997456bde8385810afadd6076ae7fff9e3835a48ca0555c98",
+  "runtimeArchiveVersion": "0.0.16/20260915001755-492f19756c31",
+  "nodeVersion": "24.21.0",
+  "platform": "win32",
+  "architecture": "x64",
+  "bytes": 33806512,
+  "sha256": "af7d3ce6f220fecac63206c7d6a45c9739aafbe928921fea0122d3f7dbe8a1d9",
+  "signer": "OpenAI OpCo, LLC",
+  "signatureTimestamp": "2026-09-23T21:33:01Z"
+}

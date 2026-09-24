@@ -59,6 +59,16 @@ if (!installSpec) {
 run(process.execPath, [dshCli, 'integration', '--from-default-profile', 'web', '--dump-config'], { capture: true })
 run(process.execPath, [dshCli, 'plugin', '--profile', 'integration', 'add', installSpec, '--save-exact'])
 
+const installedPackageDir = join(
+  dshHome,
+  'profiles',
+  'integration',
+  'node_modules',
+  '@hanger-source',
+  'hang-dsh-plugins',
+)
+run(process.execPath, [join(repoDir, 'scripts', 'check-node-repl-runtime.mjs'), installedPackageDir])
+
 const composedConfig = run(process.execPath, [dshCli, 'integration', '--dump-config'], { capture: true })
 for (const rowId of [
   'hanger-conversation-experience',
@@ -97,6 +107,9 @@ const runtimeUrl = await new Promise((resolveUrl, reject) => {
 })
 
 try {
+  if (/did not activate|启用失败/.test(runtimeOutput)) {
+    throw new Error(`official DSH host reported a plugin activation failure\n${runtimeOutput}`)
+  }
   const authResponse = await fetch(runtimeUrl, { redirect: 'manual' })
   const cookie = authResponse.headers.get('set-cookie')?.split(';', 1)[0]
   if (!cookie) throw new Error('official DSH host did not issue an authentication cookie')

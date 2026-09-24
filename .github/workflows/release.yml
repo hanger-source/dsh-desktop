@@ -22,13 +22,14 @@ jobs:
       tag: ${{ steps.release.outputs.tag }}
       version: ${{ steps.release.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - name: Resolve release version
         id: release
         env:
@@ -61,22 +62,21 @@ jobs:
         run: |
           package="$(jq -r .name package.json)"
           version="$(jq -r .version package.json)"
-          local_integrity="$(jq -r '.[0].integrity' dist/pack.json)"
-          published_integrity=""
-          if published_result="$(npm view "$package@$version" dist.integrity --json --registry=https://registry.npmjs.org 2>/dev/null)"; then
-            published_integrity="$(printf '%s' "$published_result" | jq -r 'if type == "string" then . else empty end')"
+          published_version=""
+          if published_result="$(npm view "$package@$version" version --json --registry=https://registry.npmjs.org 2>/dev/null)"; then
+            published_version="$(printf '%s' "$published_result" | jq -r 'if type == "string" then . else empty end')"
           fi
-          if [ -n "$published_integrity" ]; then
-            [ "$published_integrity" = "$local_integrity" ] || {
-              echo "$package@$version already exists with different contents" >&2
+          if [ "$published_version" = "$version" ]; then
+            differences="$(npm diff --diff="$package@$version" --diff-name-only --registry=https://registry.npmjs.org)"
+            [ -z "$differences" ] || {
+              printf '%s\n' "$differences" >&2
+              echo "$package@$version already exists with different package files" >&2
               exit 1
             }
             echo "$package@$version is already published with the verified package contents"
           else
             npm publish --access public --provenance --registry=https://registry.npmjs.org
           fi
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
       - uses: actions/upload-artifact@v4
         with:
           name: npm-package
@@ -97,11 +97,12 @@ jobs:
           - windows-latest
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
+          package-manager-cache: false
       - name: Install current official DSH toolchain
         run: npm install --global @deepseek-ai/dsh@next pnpm@11.24.0 --ignore-scripts --no-audit --no-fund
       - name: Verify published bundle through the official package manager
@@ -113,7 +114,7 @@ jobs:
       - verify-published
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
       - uses: actions/download-artifact@v4

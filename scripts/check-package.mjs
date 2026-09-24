@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { readFileSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -27,6 +28,22 @@ for (const [id, directory] of expected) {
     const clientExport = plugin.exports?.['./client']
     if (typeof clientExport !== 'string') throw new Error(`${directory} has no ./client export`)
     statSync(join(pluginRoot, clientExport))
+  }
+}
+
+for (const [platform, executable] of [
+  ['darwin-arm64', 'node_repl'],
+  ['win32-x64', 'node_repl.exe'],
+]) {
+  const vendorRoot = join(root, 'plugins/node-repl/vendor', platform)
+  const provenance = JSON.parse(readFileSync(join(vendorRoot, 'manifest.json'), 'utf8'))
+  const runtime = readFileSync(join(vendorRoot, executable))
+  const sha256 = createHash('sha256').update(runtime).digest('hex')
+  if (sha256 !== provenance.sha256) {
+    throw new Error(`node-repl ${platform} runtime SHA-256 does not match its provenance manifest`)
+  }
+  if (runtime.byteLength !== provenance.bytes) {
+    throw new Error(`node-repl ${platform} runtime size does not match its provenance manifest`)
   }
 }
 

@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/hang-dsh-plugins",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Hang maintained plugins for the official DeepSeek Harness desktop app",
   "license": "MIT",
   "private": false,
@@ -25,6 +25,7 @@
   ],
   "scripts": {
     "check": "node scripts/check-package.mjs && npm --prefix plugins/conversation-experience run check && node --check plugins/quota-monitor/index.js && node --check plugins/quota-monitor/client.js && node --check plugins/node-repl/index.js && node --check plugins/node-repl/mcp-client.js && node --check plugins/node-repl/result-adapter.js && node --check plugins/node-repl/tool-specs.js",
+    "check:node-repl-runtime": "node scripts/check-node-repl-runtime.mjs",
     "verify:official": "node scripts/verify-official-install.mjs"
   },
   "peerDependencies": {

@@ -8,7 +8,18 @@ import { NODE_REPL_TOOL_SPECS } from './tool-specs.js'
 
 const packageDirectory = dirname(fileURLToPath(import.meta.url))
 const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
-const packageVersion = '0.1.2'
+const packageVersion = '0.1.3'
+
+function resolveRuntimeCommand() {
+  const runtimeFiles = {
+    'darwin-arm64': 'node_repl',
+    'win32-x64': 'node_repl.exe',
+  }
+  const platform = `${process.platform}-${process.arch}`
+  const runtimeFile = runtimeFiles[platform]
+  if (!runtimeFile) throw new Error(`node-repl: 不支持当前平台 ${platform}`)
+  return join(packageDirectory, 'vendor', platform, runtimeFile)
+}
 
 function createAgentRuntime(ctx, options) {
   let disposed = false
@@ -100,12 +111,11 @@ const plugin = {
   name: 'node-repl',
   inject: ['agents', 'subprocess', 'timer', 'tools', 'attachments'],
   async apply(ctx) {
-    const command = join(packageDirectory, 'vendor', 'darwin-arm64', 'node_repl')
+    const command = resolveRuntimeCommand()
     const node = await ctx.subprocess.resolveExecutable('node')
-    const base64Executable = await ctx.subprocess.resolveExecutable('base64')
     const attachments = ctx.get('attachments')
     if (!attachments) throw new Error('node-repl: attachments 服务不可用')
-    const resultAdapter = createResultAdapter(ctx, { attachments, base64Executable, dshHome })
+    const resultAdapter = createResultAdapter(ctx, { attachments, node, dshHome })
     const runtimes = new Map()
     let stopping = false
 

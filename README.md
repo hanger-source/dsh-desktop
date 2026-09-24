@@ -15,7 +15,7 @@
 需要固定版本时附加版本号：
 
 ```text
-@hanger-source/hang-dsh-plugins@0.3.1
+@hanger-source/hang-dsh-plugins@0.3.2
 ```
 
 需要直接跟随 Git 提交时，也可以使用仓库地址：
@@ -60,7 +60,7 @@ npm run check
 npm run verify:official
 ```
 
-`verify:official` 会打出真实 npm 包、在临时 `DSH_HOME` 中从官方 web profile 创建验证 profile、通过 `dsh plugin` 安装总 bundle，并启动真实 Host，确认三个组件进入最终组合配置且两个 Client 包进入页面运行图。验证脚本使用 Node.js，可在 macOS 和 Windows 执行；验证目录会保留并打印路径，便于继续检查现场。
+`verify:official` 会打出真实 npm 包、在临时 `DSH_HOME` 中从官方 web profile 创建验证 profile、通过 `dsh plugin` 安装总 bundle，并直接启动安装后包内与当前平台匹配的 OpenAI Node REPL runtime，核对 MCP 工具契约。随后启动真实 Host，确认三个组件正常启用并进入最终组合配置，且两个 Client 包进入页面运行图。验证脚本使用 Node.js，可在 macOS arm64 和 Windows x64 执行；验证目录会保留并打印路径，便于继续检查现场。
 
 ## 发布
 

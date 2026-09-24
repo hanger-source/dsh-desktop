@@ -10,6 +10,6 @@
 
 MCP 返回图片时，插件通过 Cordis 的 `attachments` capability 将原始 base64 图片持久化，工具结果和后续模型请求只携带 DSH 附件引用。
 
-当前 binary 仅支持 macOS arm64。来源版本、签名身份和 SHA-256 见 `vendor/darwin-arm64/manifest.json`。
+MCP runtime 从 OpenAI 官方 ChatGPT 桌面应用中提取，并按当前系统选择随插件固定的可执行文件。目前支持 macOS arm64 和 Windows x64；来源版本、签名身份和 SHA-256 记录在对应 `vendor/<platform>/manifest.json`。
 
 由仓库根目录的 **Hang DSH Plugins** 总 bundle 统一安装和装配，不面向用户单独安装。
