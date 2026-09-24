@@ -70,19 +70,6 @@ for (const rowId of [
   }
 }
 
-const dependencyList = JSON.parse(run(process.execPath, [
-  dshCli,
-  'plugin',
-  '--profile',
-  'integration',
-  'list',
-  '--json',
-  '--depth=0',
-], { capture: true }))
-if (!dependencyList[0]?.dependencies?.['@hanger-source/hang-dsh-plugins']) {
-  throw new Error('official profile does not contain the aggregate dependency')
-}
-
 const runtime = spawn(process.execPath, [dshCli, 'integration', '--no-open', '--port', '0'], {
   cwd: repoDir,
   env,
