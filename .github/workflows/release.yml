@@ -49,7 +49,7 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
       - name: Install current official DSH toolchain
-        run: npm install --global npm@11.7.0 @deepseek-ai/dsh@next pnpm@11.24.0 --ignore-scripts --no-audit --no-fund
+        run: npm install --global @deepseek-ai/dsh@next pnpm@11.24.0 --ignore-scripts --no-audit --no-fund
       - name: Verify release package
         run: |
           npm run check
@@ -62,7 +62,10 @@ jobs:
           package="$(jq -r .name package.json)"
           version="$(jq -r .version package.json)"
           local_integrity="$(jq -r '.[0].integrity' dist/pack.json)"
-          published_integrity="$(npm view "$package@$version" dist.integrity --json --registry=https://registry.npmjs.org 2>/dev/null | jq -r '. // empty' || true)"
+          published_integrity=""
+          if published_result="$(npm view "$package@$version" dist.integrity --json --registry=https://registry.npmjs.org 2>/dev/null)"; then
+            published_integrity="$(printf '%s' "$published_result" | jq -r 'if type == "string" then . else empty end')"
+          fi
           if [ -n "$published_integrity" ]; then
             [ "$published_integrity" = "$local_integrity" ] || {
               echo "$package@$version already exists with different contents" >&2
