@@ -103,7 +103,7 @@ window.__ModuleLoader__.load({
         '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-actions{display:contents!important}',
         '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings{grid-column:2!important;grid-row:2!important;width:100%!important;margin:0!important;padding:0!important}',
         '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings>*{width:100%!important;margin:0!important}',
-        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings [data-slot="sidebar.settings"] button{justify-content:flex-end!important}',
+        '.dsh-desktop-sidebar-foot[data-dsh-wide="true"]>.dsh-desktop-sidebar-settings [data-slot="sidebar.settings"] button[aria-haspopup="dialog"]{justify-content:flex-end!important}',
         '.dsh-desktop-sidebar-foot[data-dsh-wide="true"] .mq-root{grid-column:1/-1!important;grid-row:1!important}',
         '.dsh-desktop-sidebar-foot[data-dsh-wide="true"] .dsh-cordis-empty{grid-column:1!important;grid-row:2!important}',
         '.dsh-cordis-empty{position:relative;min-width:0}',
