@@ -3,6 +3,14 @@ import Foundation
 @main
 struct UpdateCheckpointTest {
     static func main() throws {
+        let package = "file:/tmp/hanger-source-dsh-desktop-runtime-0.3.28.tgz"
+        guard DshPluginCommand.add(package) == [
+            "plugin", "--profile", "web", "add",
+            "--registry=https://registry.npmjs.org", package, "--save-exact",
+        ] else {
+            throw NSError(domain: "test", code: 10, userInfo: [NSLocalizedDescriptionKey: "dsh plugin add 没有固定使用 npmjs"])
+        }
+
         let manager = FileManager.default
         let profile = URL(fileURLWithPath: Env.dshHome).appendingPathComponent("profiles/web", isDirectory: true)
         try manager.createDirectory(at: profile, withIntermediateDirectories: true)

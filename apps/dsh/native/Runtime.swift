@@ -2,6 +2,14 @@ import Foundation
 import Darwin
 import CryptoKit
 
+enum DshPluginCommand {
+    static let publicRegistry = "--registry=https://registry.npmjs.org"
+
+    static func add(_ spec: String) -> [String] {
+        ["plugin", "--profile", "web", "add", publicRegistry, spec, "--save-exact"]
+    }
+}
+
 enum Env {
     static var port: Int {
         Int(ProcessInfo.processInfo.environment["DSH_PORT"] ?? "") ?? 3080
@@ -336,7 +344,7 @@ final class RuntimeInstaller {
         status(title, detail, logName)
         runCommand(
             executable: tools.dsh,
-            arguments: ["plugin", "--profile", "web", "add", "file:" + archive.path, "--save-exact"],
+            arguments: DshPluginCommand.add("file:" + archive.path),
             environment: commandEnvironment(tools),
             logName: logName,
             timeout: 300

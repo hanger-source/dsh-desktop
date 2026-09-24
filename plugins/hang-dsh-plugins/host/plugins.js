@@ -9,6 +9,11 @@ const { requestJson, run } = require('./process.js')
 
 const BUNDLED_CATALOG = require('../catalog.json')
 const PROFILE = 'web'
+const PUBLIC_NPM_REGISTRY = '--registry=https://registry.npmjs.org'
+
+function pluginAddArguments(spec) {
+  return ['plugin', '--profile', PROFILE, 'add', PUBLIC_NPM_REGISTRY, spec, '--save-exact']
+}
 
 function newest(values) {
   return Semver.rsort(values.filter(value => Semver.valid(value)))[0] || null
@@ -213,7 +218,7 @@ class ProfilePluginRepository {
     const currentChannel = state.channels?.[plugin.key] || (installedVersion?.includes('-') ? 'beta' : 'stable')
     if (action === 'enable' && (!installed || currentChannel !== channel)) {
       const release = (await this.releases(catalog, true))[plugin.key]?.[channel]
-      const result = await run(this.dshExecutable, ['plugin', '--profile', PROFILE, 'add', this.spec(plugin, release), '--save-exact'], {
+      const result = await run(this.dshExecutable, pluginAddArguments(this.spec(plugin, release)), {
         env: this.commandEnvironment, cwd: this.sourceRoot || Os.homedir(), timeoutMs: 5 * 60_000, maxBytes: 512 * 1024,
       })
       if (result.exitCode !== 0) throw new Error((result.stderr || result.stdout || 'dsh plugin exit ' + result.exitCode).trim())
@@ -227,4 +232,4 @@ class ProfilePluginRepository {
   }
 }
 
-module.exports = { ProfilePluginRepository, validateCatalog }
+module.exports = { ProfilePluginRepository, pluginAddArguments, validateCatalog }

@@ -274,7 +274,7 @@ final class UpdateCoordinator {
                 for target in targets where target.kind == .pluginManager || target.kind == .plugin {
                     try UpdateCheckpoint.run(
                         executable: launch.dsh,
-                        arguments: ["plugin", "--profile", "web", "add", target.spec!, "--save-exact"],
+                        arguments: DshPluginCommand.add(target.spec!),
                         environment: environment,
                         logName: "update-install.log",
                         timeout: 300
