@@ -150,7 +150,7 @@ final class RuntimeInstaller {
         status("正在安装 DeepSeek Harness", "本机尚未安装 dsh，正在从 npmjs 正式 registry 解析依赖并下载软件包。", "install.log")
         runCommand(
             executable: npm,
-            arguments: ["install", "-g", "@deepseek-ai/dsh@latest", "--registry=https://registry.npmjs.org", "--loglevel=info"],
+            arguments: ["install", "-g", "@deepseek-ai/dsh@next", "--registry=https://registry.npmjs.org", "--loglevel=info"],
             environment: Env.commandEnvironment(executable: npm, additionalExecutables: [node]),
             logName: "install.log",
             timeout: 300

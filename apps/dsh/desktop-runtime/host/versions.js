@@ -30,6 +30,7 @@ class VersionService {
     this.dshHome = options.dshHome
     this.repository = options.repository
     this.commandEnvironment = options.commandEnvironment
+    this.requestJson = options.requestJson || requestJson
     this.cache = null
   }
 
@@ -139,7 +140,7 @@ class VersionService {
   async dshStatus(local) {
     const status = { ...local }
     try {
-      const metadata = await requestJson('https://registry.npmjs.org/@deepseek-ai/dsh/latest')
+      const metadata = await this.requestJson('https://registry.npmjs.org/@deepseek-ai/dsh/next')
       status.latest = normalizeVersion(metadata && metadata.version)
       if (!status.latest) throw new Error('npmjs 没有返回有效版本')
       status.updateAvailable = status.installed ? Semver.lt(status.installed, status.latest) : null
