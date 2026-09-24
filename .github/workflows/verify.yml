@@ -18,8 +18,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-      - name: Install current official DSH
-        run: npm install --global @deepseek-ai/dsh@next --ignore-scripts --no-audit --no-fund
+      - name: Install current official DSH toolchain
+        run: npm install --global @deepseek-ai/dsh@next pnpm@11.24.0 --ignore-scripts --no-audit --no-fund
       - name: Check source packages
         run: npm run check
       - name: Verify official bundle installation

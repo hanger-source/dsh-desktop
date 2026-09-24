@@ -43,8 +43,8 @@ jobs:
           [ "$(jq -r .version package.json)" = "$version" ] || { echo "package.json version does not match $version" >&2; exit 1; }
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
-      - name: Install current official DSH
-        run: npm install --global @deepseek-ai/dsh@next --ignore-scripts --no-audit --no-fund
+      - name: Install current official DSH toolchain
+        run: npm install --global @deepseek-ai/dsh@next pnpm@11.24.0 --ignore-scripts --no-audit --no-fund
       - name: Verify release package
         run: |
           npm run check
