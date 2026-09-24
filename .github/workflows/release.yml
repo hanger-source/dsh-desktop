@@ -124,7 +124,7 @@ jobs:
             }
             echo "$package@$VERSION is already published with the verified package contents"
           else
-            npm publish "dist/hanger-source-hang-dsh-plugins-$VERSION.tgz" --access public --provenance --registry=https://registry.npmjs.org
+            npm publish "./dist/hanger-source-hang-dsh-plugins-$VERSION.tgz" --access public --provenance --registry=https://registry.npmjs.org
           fi
 
   release:
