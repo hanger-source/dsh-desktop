@@ -21,10 +21,11 @@ function assertToolContract(listed, expectedTools) {
   const tools = listed && Array.isArray(listed.tools) ? listed.tools : []
   const actualNames = tools.map(tool => tool && tool.name).filter(name => typeof name === 'string').sort()
   const expectedNames = expectedTools.map(tool => tool.name).sort()
-  if (canonicalJson(actualNames) !== canonicalJson(expectedNames)) {
+  const missingNames = expectedNames.filter(name => !actualNames.includes(name))
+  if (missingNames.length > 0) {
     throw new Error(
-      'node-repl: MCP 工具集合与随插件固定的契约不一致（expected ' +
-      expectedNames.join(', ') + '; actual ' + actualNames.join(', ') + '）',
+      'node-repl: MCP runtime 缺少插件要求的工具（missing ' +
+      missingNames.join(', ') + '; actual ' + actualNames.join(', ') + '）',
     )
   }
   for (const expected of expectedTools) {
@@ -32,6 +33,10 @@ function assertToolContract(listed, expectedTools) {
     if (canonicalJson(actual && actual.inputSchema) !== canonicalJson(expected.parameters)) {
       throw new Error('node-repl: MCP 工具 ' + expected.name + ' 的参数契约与插件版本不一致')
     }
+  }
+  const privateNames = actualNames.filter(name => !expectedNames.includes(name))
+  if (privateNames.length > 0) {
+    console.log('node-repl: 未向 Agent 暴露 runtime 私有工具', privateNames.join(', '))
   }
 }
 

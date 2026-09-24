@@ -94,10 +94,18 @@ try {
   const listed = await request('tools/list', {})
   const actual = listed.tools.map(tool => tool.name).sort()
   const expected = NODE_REPL_TOOL_SPECS.map(tool => tool.name).sort()
-  if (JSON.stringify(actual) !== JSON.stringify(expected)) {
-    throw new Error(`node-repl tool mismatch: expected ${expected.join(', ')}; actual ${actual.join(', ')}`)
+  const missing = expected.filter(name => !actual.includes(name))
+  if (missing.length > 0) {
+    throw new Error(`node-repl runtime is missing ${missing.join(', ')}; actual ${actual.join(', ')}`)
   }
-  console.log(`verified official node-repl runtime for ${platform}: ${actual.join(', ')}`)
+  const runtimePrivate = actual.filter(name => !expected.includes(name))
+  console.log(
+    `verified official node-repl runtime for ${platform}: ${expected.join(', ')}` +
+    (runtimePrivate.length > 0 ? `; runtime-private: ${runtimePrivate.join(', ')}` : ''),
+  )
+  if (runtimePrivate.length > 0) {
+    console.log(JSON.stringify(listed.tools.filter(tool => runtimePrivate.includes(tool.name))))
+  }
 } finally {
   child.stdin.end()
   child.kill()
