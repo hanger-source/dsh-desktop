@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { mkdtempSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -8,8 +8,8 @@ const repoDir = resolve(fileURLToPath(new URL('..', import.meta.url)))
 const verifyDir = mkdtempSync(join(tmpdir(), 'hang-dsh-plugins-'))
 const packageDir = join(verifyDir, 'package')
 const dshHome = join(verifyDir, 'dsh-home')
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-const dshCommand = process.platform === 'win32' ? 'dsh.cmd' : 'dsh'
+const npmCli = process.env.npm_execpath
+if (!npmCli) throw new Error('verify:official must be run through npm so the npm CLI entrypoint is available')
 const env = {
   ...process.env,
   DSH_HOME: dshHome,
@@ -36,9 +36,17 @@ function run(command, args, options = {}) {
   return result.stdout ?? ''
 }
 
+const globalNodeModules = run(process.execPath, [npmCli, 'root', '--global'], { capture: true }).trim()
+const dshPackageDir = join(globalNodeModules, '@deepseek-ai', 'dsh')
+const dshManifest = JSON.parse(readFileSync(join(dshPackageDir, 'package.json'), 'utf8'))
+const dshBin = typeof dshManifest.bin === 'string' ? dshManifest.bin : dshManifest.bin?.dsh
+if (!dshBin) throw new Error('the installed @deepseek-ai/dsh package does not declare a dsh executable')
+const dshCli = join(dshPackageDir, dshBin)
+
 let installSpec = process.argv[2]
 if (!installSpec) {
-  const packResult = JSON.parse(run(npmCommand, [
+  const packResult = JSON.parse(run(process.execPath, [
+    npmCli,
     'pack',
     repoDir,
     '--pack-destination',
@@ -48,10 +56,10 @@ if (!installSpec) {
   installSpec = join(packageDir, packResult[0].filename)
 }
 
-run(dshCommand, ['integration', '--from-default-profile', 'web', '--dump-config'], { capture: true })
-run(dshCommand, ['plugin', '--profile', 'integration', 'add', installSpec, '--save-exact'])
+run(process.execPath, [dshCli, 'integration', '--from-default-profile', 'web', '--dump-config'], { capture: true })
+run(process.execPath, [dshCli, 'plugin', '--profile', 'integration', 'add', installSpec, '--save-exact'])
 
-const composedConfig = run(dshCommand, ['integration', '--dump-config'], { capture: true })
+const composedConfig = run(process.execPath, [dshCli, 'integration', '--dump-config'], { capture: true })
 for (const rowId of [
   'hanger-conversation-experience',
   'hanger-quota-monitor',
@@ -62,7 +70,8 @@ for (const rowId of [
   }
 }
 
-const dependencyList = JSON.parse(run(dshCommand, [
+const dependencyList = JSON.parse(run(process.execPath, [
+  dshCli,
   'plugin',
   '--profile',
   'integration',
@@ -74,7 +83,7 @@ if (!dependencyList[0]?.dependencies?.['@hanger-source/hang-dsh-plugins']) {
   throw new Error('official profile does not contain the aggregate dependency')
 }
 
-const runtime = spawn(dshCommand, ['integration', '--no-open', '--port', '0'], {
+const runtime = spawn(process.execPath, [dshCli, 'integration', '--no-open', '--port', '0'], {
   cwd: repoDir,
   env,
   stdio: ['ignore', 'pipe', 'pipe'],
