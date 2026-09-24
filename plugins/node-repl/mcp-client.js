@@ -224,6 +224,9 @@ export async function createNodeReplClient(ctx, options) {
 
   return {
     done,
+    hasTool(name) {
+      return actualNames.includes(name)
+    },
     async call(name, args, signal) {
       if (disposed) throw new Error('node-repl: 会话 REPL 已关闭')
       return request('tools/call', { name, arguments: args }, 300000, signal)

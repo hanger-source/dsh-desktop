@@ -106,6 +106,17 @@ try {
   if (runtimePrivate.length > 0) {
     console.log(JSON.stringify(listed.tools.filter(tool => runtimePrivate.includes(tool.name))))
   }
+  if (runtimePrivate.includes('turn_ended')) {
+    await request('tools/call', {
+      name: 'turn_ended',
+      arguments: {
+        hook_event_name: 'Stop',
+        session_id: 'hang-dsh-runtime-check',
+        turn_id: '1',
+      },
+    })
+    console.log('verified runtime-private turn_ended lifecycle call')
+  }
 } finally {
   child.stdin.end()
   child.kill()

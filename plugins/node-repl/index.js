@@ -85,25 +85,37 @@ function createAgentRuntime(ctx, options) {
 
   console.log('node-repl: 已为会话注册工具', options.agent.id, 'tools=' + toolDisposers.length)
 
-  return async function dispose() {
-    if (disposed) return
-    disposed = true
-    for (const disposeTool of toolDisposers.reverse()) disposeTool()
-    const creating = clientPromise
-    clientPromise = null
-    client = null
-    if (!creating) return
-    let activeClient
-    try {
-      activeClient = await creating
-    } catch {
-      return
-    }
-    try {
-      await activeClient.dispose()
-    } catch (error) {
-      console.error('node-repl: 会话 REPL 清理失败', options.agent.id, String((error && error.message) || error))
-    }
+  return {
+    async turnEnded(turn, signal) {
+      if (!clientPromise) return
+      const activeClient = await clientPromise
+      if (!activeClient.hasTool('turn_ended')) return
+      await activeClient.call('turn_ended', {
+        hook_event_name: 'Stop',
+        session_id: options.agent.id,
+        turn_id: String(turn),
+      }, signal)
+    },
+    async dispose() {
+      if (disposed) return
+      disposed = true
+      for (const disposeTool of toolDisposers.reverse()) disposeTool()
+      const creating = clientPromise
+      clientPromise = null
+      client = null
+      if (!creating) return
+      let activeClient
+      try {
+        activeClient = await creating
+      } catch {
+        return
+      }
+      try {
+        await activeClient.dispose()
+      } catch (error) {
+        console.error('node-repl: 会话 REPL 清理失败', options.agent.id, String((error && error.message) || error))
+      }
+    },
   }
 }
 
@@ -121,26 +133,31 @@ const plugin = {
 
     function install(agent) {
       if (stopping || runtimes.has(agent)) return
+      let runtime
       const cleanup = agent.ctx.effect(() => {
-        const disposeRuntime = createAgentRuntime(ctx, { agent, command, node, resultAdapter })
+        runtime = createAgentRuntime(ctx, { agent, command, node, resultAdapter })
         return async () => {
           try {
-            await disposeRuntime()
+            await runtime.dispose()
           } finally {
-            if (runtimes.get(agent) === cleanup) runtimes.delete(agent)
+            if (runtimes.get(agent)?.cleanup === cleanup) runtimes.delete(agent)
           }
         }
       }, 'node-repl.session-runtime()')
-      runtimes.set(agent, cleanup)
+      runtimes.set(agent, { runtime, cleanup })
     }
 
     ctx.effect(() => {
       const stopCreated = ctx.on('agent/created', ({ agent }) => install(agent))
+      const stopTurnEnded = ctx.on('agent/turn-stopping', async ({ agent, turn, signal }) => {
+        await runtimes.get(agent)?.runtime.turnEnded(turn, signal)
+      })
       for (const agent of ctx.agents.list()) install(agent)
       return async () => {
         stopping = true
         stopCreated()
-        const cleanups = [...runtimes.values()]
+        stopTurnEnded()
+        const cleanups = [...runtimes.values()].map(value => value.cleanup)
         runtimes.clear()
         await Promise.allSettled(cleanups.map(cleanup => Promise.resolve(cleanup())))
       }
