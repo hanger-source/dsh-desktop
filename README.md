@@ -66,11 +66,10 @@ npm run verify:official
 
 总版本记录在根 `package.json`。推送 `hang-dsh-plugins-v<version>` tag，或在 Actions 中运行 **Release Hang DSH Plugins**，会：
 
-1. 安装当前 `@deepseek-ai/dsh@next`；
-2. 运行源码检查和真实 profile 安装验证；
-3. 生成总 bundle tgz 与 SHA-256；
-4. 发布 `@hanger-source/hang-dsh-plugins` 到 npm 官方 registry；
-5. 在 macOS 和 Windows 中通过官方插件管理器安装已发布版本；
-6. 两个平台都验证通过后创建 Git tag 和 GitHub Release。
+1. 运行源码检查，生成总 bundle tgz 与 SHA-256；
+2. 在 macOS 和 Windows 安装当前 `@deepseek-ai/dsh@next`；
+3. 两个平台都通过官方插件管理器安装并验证同一个待发布 tgz；
+4. 验证通过后发布 `@hanger-source/hang-dsh-plugins` 到 npm 官方 registry；
+5. 创建 Git tag 和 GitHub Release。
 
 子目录版本用于组件诊断，不再各自创建 Release 或要求用户分别选择版本频道。
