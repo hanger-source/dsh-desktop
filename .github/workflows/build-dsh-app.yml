@@ -47,6 +47,7 @@ jobs:
         run: |
           npm --prefix apps/dsh/desktop-runtime ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
           npm --prefix apps/dsh/desktop-runtime run check
+          npm --prefix plugins/hang-dsh-plugins ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
           npm --prefix plugins/hang-dsh-plugins run check
       - name: Verify update checkpoint restore
         run: |

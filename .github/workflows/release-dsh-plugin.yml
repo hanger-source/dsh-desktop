@@ -50,6 +50,9 @@ jobs:
             echo "tag 已存在：$tag" >&2
             exit 1
           fi
+          if [ "$PLUGIN" = hang-dsh-plugins ]; then
+            npm --prefix "plugins/$PLUGIN" ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org
+          fi
           if [ "$PLUGIN" = conversation-experience ] || [ "$PLUGIN" = hang-dsh-plugins ]; then
             npm --prefix "plugins/$PLUGIN" run check
           fi
