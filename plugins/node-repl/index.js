@@ -8,7 +8,7 @@ import { NODE_REPL_TOOL_SPECS } from './tool-specs.js'
 
 const packageDirectory = dirname(fileURLToPath(import.meta.url))
 const dshHome = process.env.DSH_HOME || join(homedir(), '.dsh')
-const packageVersion = '0.1.3'
+const packageVersion = '0.1.4'
 
 function resolveRuntimeCommand() {
   const runtimeFiles = {
@@ -21,6 +21,15 @@ function resolveRuntimeCommand() {
   return join(packageDirectory, 'vendor', platform, runtimeFile)
 }
 
+function resolveHostNodeRuntime() {
+  const electron = typeof process.versions.electron === 'string'
+  return {
+    command: process.execPath,
+    env: electron ? { ELECTRON_RUN_AS_NODE: '1' } : {},
+    electron,
+  }
+}
+
 function createAgentRuntime(ctx, options) {
   let disposed = false
   let client = null
@@ -29,7 +38,7 @@ function createAgentRuntime(ctx, options) {
   async function createClient() {
     const created = await createNodeReplClient(ctx, {
       command: options.command,
-      node: options.node,
+      hostNode: options.hostNode,
       cwd: options.agent.session.header.cwd ?? dshHome,
       sessionId: options.agent.id,
       version: packageVersion,
@@ -124,10 +133,14 @@ const plugin = {
   inject: ['agents', 'subprocess', 'timer', 'tools', 'attachments'],
   async apply(ctx) {
     const command = resolveRuntimeCommand()
-    const node = await ctx.subprocess.resolveExecutable('node')
+    const hostNode = resolveHostNodeRuntime()
     const attachments = ctx.get('attachments')
     if (!attachments) throw new Error('node-repl: attachments 服务不可用')
-    const resultAdapter = createResultAdapter(ctx, { attachments, node, dshHome })
+    const resultAdapter = createResultAdapter(ctx, { attachments, hostNode, dshHome })
+    console.log('node-repl: 使用 Host Node runtime', {
+      command: hostNode.command,
+      electronRunAsNode: hostNode.electron,
+    })
     const runtimes = new Map()
     let stopping = false
 
@@ -135,7 +148,7 @@ const plugin = {
       if (stopping || runtimes.has(agent)) return
       let runtime
       const cleanup = agent.ctx.effect(() => {
-        runtime = createAgentRuntime(ctx, { agent, command, node, resultAdapter })
+        runtime = createAgentRuntime(ctx, { agent, command, hostNode, resultAdapter })
         return async () => {
           try {
             await runtime.dispose()

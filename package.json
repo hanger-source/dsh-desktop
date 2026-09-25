@@ -1,6 +1,6 @@
 {
   "name": "@hanger-source/hang-dsh-plugins",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "description": "Hang maintained plugins for the official DeepSeek Harness desktop app",
   "license": "MIT",
   "private": false,

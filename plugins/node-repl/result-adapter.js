@@ -45,12 +45,12 @@ export function createResultAdapter(ctx, options) {
     // host-realm Buffer chunks accepted by the attachment image decoder.
     const decoder = ctx.subprocess.spawn({
       argv: [
-        options.node,
+        options.hostNode.command,
         '-e',
         'let data="";process.stdin.setEncoding("utf8");process.stdin.on("data",chunk=>data+=chunk);process.stdin.on("end",()=>process.stdout.write(Buffer.from(data,"base64")))',
       ],
       cwd: options.dshHome,
-      env: {},
+      env: options.hostNode.env,
       stdio: { stdin: { data }, stdout: 'pipe', stderr: 'inherit' },
       graceMs: 2000,
     })

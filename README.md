@@ -15,7 +15,7 @@
 需要固定版本时附加版本号：
 
 ```text
-@hanger-source/hang-dsh-plugins@0.3.2
+@hanger-source/hang-dsh-plugins@0.3.3
 ```
 
 需要直接跟随 Git 提交时，也可以使用仓库地址：

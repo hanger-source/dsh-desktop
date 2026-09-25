@@ -38,13 +38,17 @@ function assertToolContract(listed, expectedTools) {
   if (privateNames.length > 0) {
     console.log('node-repl: 未向 Agent 暴露 runtime 私有工具', privateNames.join(', '))
   }
+  return actualNames
 }
 
 export async function createNodeReplClient(ctx, options) {
   const handle = ctx.subprocess.spawn({
     argv: [options.command, '--disable-sandbox'],
     cwd: options.cwd,
-    env: { NODE_REPL_NODE_PATH: options.node },
+    env: {
+      ...options.hostNode.env,
+      NODE_REPL_NODE_PATH: options.hostNode.command,
+    },
     stdio: {
       stdin: 'pipe',
       stdout: 'pipe',
@@ -64,6 +68,7 @@ export async function createNodeReplClient(ctx, options) {
   let stdoutBuffer = ''
   let stopping = false
   let disposed = false
+  let actualToolNames = []
 
   function send(message) {
     handle.stdin.write(JSON.stringify(message) + '\n')
@@ -206,7 +211,7 @@ export async function createNodeReplClient(ctx, options) {
     }, 15000)
     send({ jsonrpc: '2.0', method: 'notifications/initialized', params: {} })
     const listed = await request('tools/list', {}, 15000)
-    assertToolContract(listed, options.expectedTools)
+    actualToolNames = assertToolContract(listed, options.expectedTools)
     console.log(
       'node-repl: 会话 MCP 已就绪',
       options.sessionId,
@@ -225,7 +230,7 @@ export async function createNodeReplClient(ctx, options) {
   return {
     done,
     hasTool(name) {
-      return actualNames.includes(name)
+      return actualToolNames.includes(name)
     },
     async call(name, args, signal) {
       if (disposed) throw new Error('node-repl: 会话 REPL 已关闭')
